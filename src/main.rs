@@ -79,7 +79,7 @@ fn print_usage() {
     println!();
     println!("Values can contain:");
     println!("  - Comma-separated lists: 1,2,4");
-    println!("  - Ranges: 1..4 (expands to 1,2,3)");
+    println!("  - Ranges: 1:4 (expands to 1,2,3)");
     println!("  - Expressions referencing earlier parameters:");
     println!("    - Variables: n");
     println!("    - Addition: n+1, 2+n");

@@ -24,7 +24,6 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
     let mut options = Options::default();
     let mut i = 0;
     
-    // Parse options and parameters
     while i < args.len() {
         let arg = &args[i];
         
@@ -39,7 +38,6 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
             if i >= args.len() {
                 return Err("--keywords requires an argument".to_string());
             }
-            // Split by comma and trim whitespace, but preserve spaces within keywords
             options.keywords = args[i].split(',').map(|s| s.trim().to_string()).collect();
             i += 1;
         } else if arg == "--output" {
@@ -50,7 +48,6 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
             options.output_file = args[i].clone();
             i += 1;
         } else if arg.starts_with("--") {
-            // Parameter: convert to uppercase and replace dashes with underscores
             let name = arg[2..].to_uppercase().replace('-', "_");
             i += 1;
             if i >= args.len() {
@@ -60,15 +57,17 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
             params.push((name, value));
             i += 1;
         } else {
-            // Not an option or parameter, this is the command
             break;
         }
     }
     
-    // Rest is the command
+    if options.stdout_only && options.stderr_only {
+        return Err("Cannot specify both --stdout and --stderr".to_string());
+    }
+    
     let mut command = args[i..].to_vec();
     
-    // If no command is provided, read from stdin
+    // If no command provided, read from stdin (for heredoc usage)
     if command.is_empty() {
         let mut stdin_content = String::new();
         if let Err(e) = io::stdin().read_to_string(&mut stdin_content) {
@@ -76,7 +75,6 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
         }
         
         if !stdin_content.trim().is_empty() {
-            // Use bash to execute the script from stdin
             command = vec!["bash".to_string(), "-c".to_string(), stdin_content];
         } else {
             return Err("No command specified and no input from stdin".to_string());

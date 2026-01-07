@@ -10,35 +10,21 @@
 - **No integration**: Read environment variables, write to stdout/stderr—that's it. All languages are supported. Experiment scripts are regular scripts that can run without `runexp`. No need to import anything.
 - **Text-in, text-out**: All related files are plain text that work seamlessly with `sed`, `awk`, `grep`, `vim`, `vscode™`, `Excel™`. Who wants MySQL for 10KB of experiment data?
 
-## Usage (Command-line)
-
-### Parameter Naming Convention
-
-Parameter names specified on the command line are converted to environment variable names following these rules:
-1. All letters are converted to **uppercase**
-2. Both **dashes (`-`)** and **underscores (`_`)** are converted to **underscores (`_`)**
-
-For example:
-- `--batch-size` becomes `BATCH_SIZE`
-- `--learning_rate` becomes `LEARNING_RATE`
-- `--gpu` becomes `GPU`
+## Quick Start
 
 ### Example 1
 
 Suppose our experiment script is as follows:
 
 ```python
-# Read parameters from environment variables
 import os
 ngpu = int(os.environ["GPU"])  # Parameter names are converted to uppercase
 batch_size = int(os.environ["BATCH_SIZE"])  # Dashes and underscores become underscores
 
-# Do the experiments
 import random
 accuracy = random.random()
 time = batch_size / ngpu + random.random() 
 
-# Report the results
 print("accuracy: ", accuracy)
 print("time: ", time)
 ```
@@ -76,25 +62,9 @@ N=4 GPU=4 BATCHSIZE=128 python exp.py
 
 As illustrated above, a parameter can refer to parameters defined earlier, and simple calculations are supported. Parameters that have multiple values (expressed using `,`) instruct `runexp` to run all combinations of the values.
 
-### Parameter Expressions
-
-Currently supported expressions include:
-
-- Variables that are defined earlier
-- Literal numbers
-- Addition: `2+n`
-- Multiplication: `2n`, `n*n`. Be aware of bash substitution when using `*`.
-- Exponentiation: `n^2`
-- Comma-separated list: `1,2,4,n,2n+1,4n^3`
-- Integer ranges: `1:4` means `1,2,3` (start:end, where end is exclusive)
-- Integer ranges with step: `1:10:2` means `1,3,5,7,9` (start:end:step)
-- Literal strings that do not contain any of the above symbols (`+`, `*`, `^`, `,`, `:`)
-
-`runexp` does not intend to embed a scripting language. These expressions should fit most use cases.
-
 ### Example 2
 
-We demonstrate another usage pattern:
+When the experiment command is long or programs don't directly read environment variables, use a heredoc:
 
 ```bash
 runexp --gpu 1,2,4 --batchsize 32gpu <<"EOF"
@@ -107,47 +77,63 @@ python report_result.py
 EOF
 ```
 
-In this example, the experiment command is long and the programs do not directly read environment variables. Therefore, we use a heredoc to send the ad-hoc experiment script to `runexp` through stdin. Note that we need to quote `EOF` in the heredoc to prevent the variables from being expanded too early.
+Note: Quote `EOF` in the heredoc to prevent shell from expanding variables too early.
 
-### How the Output is Parsed
+## Reference
 
-When running an experiment, `runexp` collects stdout and stderr as text based on the options (both by default, or only one if `--stdout` or `--stderr` is specified).
+### Parameter Naming Convention
 
-The output is split by line breaks and numbers. The text before a number is considered the label of the number. If a keyword appears multiple times during a run, the last value is kept.
+Parameter names are converted to environment variable names:
+1. All letters are converted to **uppercase**
+2. Both **dashes (`-`)** and **underscores (`_`)** are converted to **underscores (`_`)**
 
-The `--keywords keyword1,keyword2` option can be used to filter results - only numbers whose labels contain any of the keywords (keyword1 or keyword2) are kept; others are discarded. Keywords can contain spaces and special characters (e.g., `--keywords "training time,test-accuracy"`). **Important**: If keywords are specified and any keyword is not found in the output, the experiment is treated as failed and will not be included in the results.
+Examples: `--batch-size` → `BATCH_SIZE`, `--learning_rate` → `LEARNING_RATE`, `--gpu` → `GPU`
+
+### Parameter Expressions
+
+Currently supported expressions include:
+
+- Variables defined earlier
+- Literal numbers
+- Addition: `2+n`
+- Multiplication: `2n`, `n*n` (be aware of bash substitution when using `*`)
+- Exponentiation: `n^2`
+- Comma-separated list: `1,2,4,n,2n+1,4n^3`
+- Integer ranges: `1:4` means `1,2,3` (start:end, end exclusive)
+- Integer ranges with step: `1:10:2` means `1,3,5,7,9` (start:end:step)
+- Literal strings that do not contain any of the above symbols (`+`, `*`, `^`, `,`, `:`)
+
+`runexp` does not intend to embed a scripting language. These expressions should fit most use cases.
+
+### Output Parsing
+
+`runexp` collects stdout and stderr (both by default, or only one with `--stdout` or `--stderr`). The output is split by line breaks and numbers. The text before a number is considered its label. If a label appears multiple times, the last value is kept.
+
+The `--keywords keyword1,keyword2` option filters results - only numbers whose labels contain any keyword are kept. Keywords can contain spaces (e.g., `--keywords "training time,test-accuracy"`). **Important**: If any specified keyword is not found, the experiment is treated as failed.
 
 ### Output Format
 
-Results are saved to a CSV file (default: `results.csv`, or specify with `--output FILE`). Each line represents one experiment. The columns are:
+Results are saved to a CSV file (default: `results.csv`, or specify with `--output FILE`). Columns are:
 
-1. Parameter values (the variables used to run the experiment)
-2. Extracted metrics (keywords found in the output)
-3. Complete stdout (if not using `--stderr` only)
-4. Complete stderr (if not using `--stdout` only)
+1. Parameter values
+2. Extracted metrics
+3. Complete stdout (unless `--stderr` only)
+4. Complete stderr (unless `--stdout` only)
 
-The CSV format is compatible with Excel and other spreadsheet applications. Fields containing commas, quotes, or newlines are properly escaped.
+### Dealing with Failures and Resuming
 
-### Dealing with Failures and Resuming Experiments
+Failed experiments are not included in results, but their stdout/stderr are printed for debugging.
 
-If any experiment fails, it will not be included in the result file, but the error output (stdout and stderr) will be printed to help with debugging.
-
-`runexp` automatically skips experiments that have already been completed. If you run the same command again, it will check the output file and skip any parameter combinations that already exist in the results, only running combinations that are missing. This allows you to easily resume interrupted experiment runs without needing to manually track progress.
+`runexp` automatically skips completed experiments. Re-running the same command resumes from where it left off.
 
 ## Examples
 
-The `examples/` directory contains a complete test suite demonstrating all features:
+The `examples/` directory contains:
 
 - `test_experiment.py` - A simple Python script that reads parameters and outputs results
 - `run_tests.sh` - A comprehensive test script showing all runexp features
 
-To run the examples:
-
 ```bash
-# Run all tests
 bash examples/run_tests.sh
-
-# Or try individual examples
 ./target/release/runexp --gpu 1,2 --batchsize 32,64 python3 examples/test_experiment.py
-./target/release/runexp --output my_results.csv --keywords accuracy,loss --gpu 1,2 --batchsize 32 python3 examples/test_experiment.py
 ```
