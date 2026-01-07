@@ -39,7 +39,8 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
             if i >= args.len() {
                 return Err("--keywords requires an argument".to_string());
             }
-            options.keywords = args[i].split(',').map(|s| s.to_string()).collect();
+            // Split by comma and trim whitespace, but preserve spaces within keywords
+            options.keywords = args[i].split(',').map(|s| s.trim().to_string()).collect();
             i += 1;
         } else if arg == "--output" {
             i += 1;

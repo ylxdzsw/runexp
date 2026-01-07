@@ -102,9 +102,9 @@ In this example, the experiment command is long and the programs do not directly
 
 When running an experiment, `runexp` collects stdout and stderr as text based on the options (both by default, or only one if `--stdout` or `--stderr` is specified).
 
-The output is split by line breaks and numbers. The text before a number is considered the label of the number. If a keyword appears multiple times during a run, the last value is kept. If a keyword is not found during a run, that cell is left empty in the results.
+The output is split by line breaks and numbers. The text before a number is considered the label of the number. If a keyword appears multiple times during a run, the last value is kept.
 
-The `--keywords keyword1,keyword2` option can be used to filter results - only numbers whose labels contain any of the keywords (keyword1 or keyword2) are kept; others are discarded.
+The `--keywords keyword1,keyword2` option can be used to filter results - only numbers whose labels contain any of the keywords (keyword1 or keyword2) are kept; others are discarded. Keywords can contain spaces and special characters (e.g., `--keywords "training time,test-accuracy"`). **Important**: If keywords are specified and any keyword is not found in the output, the experiment is treated as failed and will not be included in the results.
 
 ### Output Format
 

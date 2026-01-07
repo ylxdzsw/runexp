@@ -122,6 +122,29 @@ fn execute_single(
         parse_output(&combined, &mut parsed, &options.keywords);
     }
     
+    // If keywords are specified, check that all were found
+    if !options.keywords.is_empty() {
+        let mut missing_keywords = Vec::new();
+        for keyword in &options.keywords {
+            // Check if any metric label contains this keyword
+            let found = parsed.keys().any(|label| 
+                label.to_lowercase().contains(&keyword.to_lowercase())
+            );
+            if !found {
+                missing_keywords.push(keyword.clone());
+            }
+        }
+        
+        if !missing_keywords.is_empty() {
+            // Write the collected stdout and stderr to runexp's output so user can inspect
+            eprintln!("=== stdout ===");
+            eprint!("{}", stdout);
+            eprintln!("=== stderr ===");
+            eprint!("{}", stderr);
+            return Err(format!("Missing keywords in output: {}", missing_keywords.join(", ")));
+        }
+    }
+    
     Ok((parsed, stdout, stderr))
 }
 
