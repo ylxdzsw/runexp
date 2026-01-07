@@ -20,11 +20,22 @@ pub fn execute_experiments(
 ) -> Result<(), String> {
     let mut results = Vec::new();
     
-    // Load existing results if output file exists
+    // Get expected parameter names from combinations
+    let expected_params: Vec<String> = if let Some(first_combo) = combinations.first() {
+        let mut params: Vec<String> = first_combo.params.keys().cloned().collect();
+        params.sort();
+        params
+    } else {
+        Vec::new()
+    };
+    
+    // Load existing results if output file exists and validate compatibility
     let existing_results = if std::path::Path::new(&options.output_file).exists() {
-        match load_existing_results(&options.output_file) {
+        match load_existing_results(&options.output_file, &expected_params, &options.keywords) {
             Ok(res) => res,
-            Err(_) => Vec::new(), // If failed to load, start fresh
+            Err(e) => {
+                return Err(format!("Existing result file is incompatible: {}. Please use a different output file or remove the existing one.", e));
+            }
         }
     } else {
         Vec::new()
@@ -252,28 +263,24 @@ fn save_results(results: &[ExperimentResult], filename: &str, options: &Options)
         return Ok(());
     }
     
-    // Collect all unique parameter names and metric names
+    // Collect all unique parameter names
     let mut param_names_set = HashSet::new();
-    let mut metric_names_set = HashSet::new();
     
     for result in results {
         for name in result.params.keys() {
             param_names_set.insert(name.clone());
-        }
-        for name in result.metrics.keys() {
-            metric_names_set.insert(name.clone());
         }
     }
     
     let mut param_names: Vec<String> = param_names_set.into_iter().collect();
     param_names.sort();
     
-    let mut metric_names: Vec<String> = metric_names_set.into_iter().collect();
-    metric_names.sort();
-    
-    // Build header: params, metrics, then stdout and/or stderr
+    // Build header: params, then keyword columns (if any), then stdout and/or stderr
     let mut headers = param_names.clone();
-    headers.extend(metric_names.clone());
+    
+    // Only add keyword columns if keywords are specified
+    let keyword_columns: Vec<String> = options.keywords.clone();
+    headers.extend(keyword_columns.clone());
     
     // Add stdout/stderr columns based on options
     if options.stdout_only {
@@ -302,9 +309,13 @@ fn save_results(results: &[ExperimentResult], filename: &str, options: &Options)
             values.push(escape_csv_field(val));
         }
         
-        // Add metric values (empty if not found)
-        for name in &metric_names {
-            let val = result.metrics.get(name).map(|s| s.as_str()).unwrap_or("");
+        // Add keyword metric values (find matching metric for each keyword)
+        for keyword in &keyword_columns {
+            // Find the metric that matches this keyword
+            let val = result.metrics.iter()
+                .find(|(label, _)| label.to_lowercase().contains(&keyword.to_lowercase()))
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("");
             values.push(escape_csv_field(val));
         }
         
@@ -336,7 +347,11 @@ fn escape_csv_field(field: &str) -> String {
     }
 }
 
-fn load_existing_results(filename: &str) -> Result<Vec<ExperimentResult>, String> {
+fn load_existing_results(
+    filename: &str,
+    expected_params: &[String],
+    expected_keywords: &[String],
+) -> Result<Vec<ExperimentResult>, String> {
     let contents = fs::read_to_string(filename)
         .map_err(|_| format!("Could not read file: {}", filename))?;
     
@@ -347,6 +362,56 @@ fn load_existing_results(filename: &str) -> Result<Vec<ExperimentResult>, String
     }
     
     let column_names = &records[0];
+    
+    // Validate compatibility: check that parameter columns match
+    // Expected columns: params (sorted), keywords, stdout/stderr
+    let num_params = expected_params.len();
+    let num_keywords = expected_keywords.len();
+    
+    // Find where stdout/stderr columns start
+    let stdout_idx = column_names.iter().position(|c| c == "stdout");
+    let stderr_idx = column_names.iter().position(|c| c == "stderr");
+    
+    // Determine the number of columns before stdout/stderr (params + keywords)
+    let data_columns_end = stdout_idx.or(stderr_idx)
+        .ok_or_else(|| "Missing stdout/stderr columns in result file".to_string())?;
+    
+    // The file should have: params + keywords columns before stdout/stderr
+    let expected_data_columns = num_params + num_keywords;
+    if data_columns_end != expected_data_columns {
+        return Err(format!(
+            "Parameter/keyword column count mismatch: file has {} data columns, expected {} ({} params + {} keywords)",
+            data_columns_end, expected_data_columns, num_params, num_keywords
+        ));
+    }
+    
+    // Verify parameter names match
+    let file_params: Vec<&String> = column_names[..num_params].iter().collect();
+    for (i, expected_param) in expected_params.iter().enumerate() {
+        if file_params.get(i) != Some(&expected_param) {
+            return Err(format!(
+                "Parameter name mismatch at position {}: file has '{}', expected '{}'",
+                i,
+                file_params.get(i).map(|s| s.as_str()).unwrap_or("<missing>"),
+                expected_param
+            ));
+        }
+    }
+    
+    // Verify keyword columns match
+    let file_keywords: Vec<&String> = column_names[num_params..data_columns_end].iter().collect();
+    for (i, expected_keyword) in expected_keywords.iter().enumerate() {
+        if file_keywords.get(i) != Some(&expected_keyword) {
+            return Err(format!(
+                "Keyword column mismatch at position {}: file has '{}', expected '{}'",
+                i,
+                file_keywords.get(i).map(|s| s.as_str()).unwrap_or("<missing>"),
+                expected_keyword
+            ));
+        }
+    }
+    
+    // Parse the results
     let mut results = Vec::new();
     
     for values in &records[1..] {
@@ -359,16 +424,16 @@ fn load_existing_results(filename: &str) -> Result<Vec<ExperimentResult>, String
         let mut stdout = String::new();
         let mut stderr = String::new();
         
-        for (name, value) in column_names.iter().zip(values.iter()) {
+        for (idx, (name, value)) in column_names.iter().zip(values.iter()).enumerate() {
             if name == "stdout" {
                 stdout = value.clone();
             } else if name == "stderr" {
                 stderr = value.clone();
-            } else if name.chars().all(|c| c.is_uppercase() || !c.is_alphabetic()) {
-                // Heuristic: parameter names are UPPERCASE (set by parser)
-                // This may misclassify metrics with all-caps labels as parameters
+            } else if idx < num_params {
+                // It's a parameter
                 params.insert(name.to_string(), value.to_string());
-            } else {
+            } else if idx < data_columns_end {
+                // It's a keyword metric - store with keyword as key
                 metrics.insert(name.to_string(), value.to_string());
             }
         }
@@ -513,5 +578,94 @@ mod tests {
         
         assert_eq!(results.get("accuracy: "), Some(&"0.95".to_string()));
         assert_eq!(results.get("loss: "), None);
+    }
+
+    #[test]
+    fn test_load_existing_results_compatible() {
+        use std::io::Write;
+        
+        // Create a temporary CSV file
+        let temp_path = "/tmp/test_runexp_compatible.csv";
+        {
+            let mut file = File::create(temp_path).unwrap();
+            writeln!(file, "BATCHSIZE,GPU,accuracy,stdout,stderr").unwrap();
+            writeln!(file, "32,1,0.95,\"output\",\"error\"").unwrap();
+        }
+        
+        let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string()];
+        let expected_keywords = vec!["accuracy".to_string()];
+        
+        let result = load_existing_results(
+            temp_path,
+            &expected_params,
+            &expected_keywords
+        );
+        
+        // Clean up
+        let _ = fs::remove_file(temp_path);
+        
+        assert!(result.is_ok());
+        let results = result.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].params.get("BATCHSIZE"), Some(&"32".to_string()));
+        assert_eq!(results[0].params.get("GPU"), Some(&"1".to_string()));
+    }
+
+    #[test]
+    fn test_load_existing_results_incompatible_params() {
+        use std::io::Write;
+        
+        // Create a temporary CSV file with different parameters
+        let temp_path = "/tmp/test_runexp_incompatible_params.csv";
+        {
+            let mut file = File::create(temp_path).unwrap();
+            writeln!(file, "BATCHSIZE,GPU,stdout,stderr").unwrap();
+            writeln!(file, "32,1,\"output\",\"error\"").unwrap();
+        }
+        
+        // Expect different parameters (3 instead of 2)
+        let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string(), "LR".to_string()];
+        let expected_keywords: Vec<String> = vec![];
+        
+        let result = load_existing_results(
+            temp_path,
+            &expected_params,
+            &expected_keywords
+        );
+        
+        // Clean up
+        let _ = fs::remove_file(temp_path);
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("column count mismatch"));
+    }
+
+    #[test]
+    fn test_load_existing_results_incompatible_keywords() {
+        use std::io::Write;
+        
+        // Create a temporary CSV file with accuracy keyword
+        let temp_path = "/tmp/test_runexp_incompatible_keywords.csv";
+        {
+            let mut file = File::create(temp_path).unwrap();
+            writeln!(file, "BATCHSIZE,GPU,accuracy,stdout,stderr").unwrap();
+            writeln!(file, "32,1,0.95,\"output\",\"error\"").unwrap();
+        }
+        
+        let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string()];
+        // Expect different keywords
+        let expected_keywords = vec!["loss".to_string()];
+        
+        let result = load_existing_results(
+            temp_path,
+            &expected_params,
+            &expected_keywords
+        );
+        
+        // Clean up
+        let _ = fs::remove_file(temp_path);
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("mismatch"));
     }
 }
