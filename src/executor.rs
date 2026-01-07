@@ -256,6 +256,9 @@ fn extract_number_from_string(s: &str) -> Option<(String, String)> {
             num_end = i + 1;
         } else if c == '.' && !has_dot && i > 0 && num_end == i {
             // Allow one decimal point immediately after digits
+            // Note: We require at least one digit before the decimal point (i > 0)
+            // This is intentional - we don't support leading decimal points like ".5"
+            // since they're uncommon in experiment outputs and could cause false positives
             has_dot = true;
             num_end = i + 1;
         } else if num_end > 0 {
@@ -277,7 +280,7 @@ fn extract_number_from_string(s: &str) -> Option<(String, String)> {
             return None;
         }
         
-        if let Ok(_) = num_str.parse::<f64>() {
+        if let Ok(_parsed_num) = num_str.parse::<f64>() {
             let remaining = &s[num_end..];
             return Some((num_str.to_string(), remaining.to_string()));
         }
