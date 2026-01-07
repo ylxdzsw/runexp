@@ -3,7 +3,6 @@ use std::env;
 mod parser;
 mod evaluator;
 mod executor;
-mod daemon;
 
 use parser::parse_args;
 use evaluator::evaluate_params;

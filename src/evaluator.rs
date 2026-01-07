@@ -7,14 +7,19 @@ pub struct Combination {
 
 pub fn evaluate_params(params: &[(String, String)]) -> Result<Vec<Combination>, String> {
     // Build combinations incrementally, evaluating each parameter in context
-    let mut combinations = vec![HashMap::new()];
+    let mut combinations: Vec<HashMap<String, String>> = vec![HashMap::new()];
     
     for (name, value) in params {
         let mut new_combinations = Vec::new();
         
         for combo in &combinations {
+            // Normalize context keys to uppercase for case-insensitive lookup
+            let normalized_context: HashMap<String, String> = combo.iter()
+                .map(|(k, v)| (k.to_uppercase(), v.clone()))
+                .collect();
+            
             // Evaluate the expression in the context of this combination
-            let values = evaluate_expression(value, combo)?;
+            let values = evaluate_expression(value, &normalized_context)?;
             
             for val in values {
                 let mut new_combo = combo.clone();
@@ -145,11 +150,10 @@ fn parse_atom_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64,
         return Ok(num * var_val);
     }
     
-    // Check if it's a variable (case insensitive)
-    for (key, value) in context.iter() {
-        if key.eq_ignore_ascii_case(expr) {
-            return value.parse::<i64>().map_err(|_| format!("Variable {} is not a number", expr));
-        }
+    // Check if it's a variable (context keys are already normalized to uppercase)
+    let upper_expr = expr.to_uppercase();
+    if let Some(value) = context.get(&upper_expr) {
+        return value.parse::<i64>().map_err(|_| format!("Variable {} is not a number", expr));
     }
     
     // Try to parse as literal number

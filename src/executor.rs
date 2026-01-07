@@ -93,18 +93,16 @@ fn execute_single(
     
     // Parse output based on options
     let mut parsed = HashMap::new();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     
     if options.stdout_only {
-        let stdout = String::from_utf8_lossy(&output.stdout);
         parse_output(&stdout, &mut parsed, &options.keywords);
     } else if options.stderr_only {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         parse_output(&stderr, &mut parsed, &options.keywords);
     } else {
         // Parse both stdout and stderr by default
-        let stdout = String::from_utf8_lossy(&output.stdout);
         parse_output(&stdout, &mut parsed, &options.keywords);
-        let stderr = String::from_utf8_lossy(&output.stderr);
         parse_output(&stderr, &mut parsed, &options.keywords);
     }
     
@@ -114,13 +112,20 @@ fn execute_single(
 fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[String]) {
     for line in text.lines() {
         // Look for patterns like "label: number" or "label number"
-        let parts: Vec<&str> = line.split(&[':', ' ', '\t'][..]).collect();
+        // Split by common separators
+        let parts: Vec<&str> = line.split(|c: char| c == ':' || c.is_whitespace()).collect();
         
         for i in 0..parts.len() {
             if let Ok(num) = parts[i].trim().parse::<f64>() {
                 // Found a number, use preceding text as label
                 let label = if i > 0 {
-                    parts[..i].join(" ").trim().to_string()
+                    parts[..i].iter()
+                        .filter(|s| !s.is_empty())
+                        .cloned()
+                        .collect::<Vec<&str>>()
+                        .join(" ")
+                        .trim()
+                        .to_string()
                 } else {
                     "value".to_string()
                 };
