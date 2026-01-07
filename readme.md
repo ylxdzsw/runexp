@@ -12,6 +12,17 @@
 
 ## Usage (Command-line)
 
+### Parameter Naming Convention
+
+Parameter names specified on the command line are converted to environment variable names following these rules:
+1. All letters are converted to **uppercase**
+2. Both **dashes (`-`)** and **underscores (`_`)** are converted to **underscores (`_`)**
+
+For example:
+- `--batch-size` becomes `BATCH_SIZE`
+- `--learning_rate` becomes `LEARNING_RATE`
+- `--gpu` becomes `GPU`
+
 ### Example 1
 
 Suppose our experiment script is as follows:
@@ -19,8 +30,8 @@ Suppose our experiment script is as follows:
 ```python
 # Read parameters from environment variables
 import os
-ngpu = int(os.environ["GPU"])  # By default, parameter names are capitalized
-batch_size = int(os.environ["BATCHSIZE"])
+ngpu = int(os.environ["GPU"])  # Parameter names are converted to uppercase
+batch_size = int(os.environ["BATCH_SIZE"])  # Dashes and underscores become underscores
 
 # Do the experiments
 import random
