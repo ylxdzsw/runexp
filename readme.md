@@ -100,10 +100,43 @@ In this example, the experiment command is long and the programs do not directly
 
 ### How the Output is Parsed
 
-Without options, `runexp` concatenates both stdout and stderr, splitting the output by line breaks `\n` and numbers. Each number is labeled by the text before it and included in the results.
+When running an experiment, `runexp` collects stdout and stderr as text based on the options (both by default, or only one if `--stdout` or `--stderr` is specified).
 
-The `--stdout` and `--stderr` options can be used to specify the output stream. If `--keywords keyword1,keyword2` is specified, only numbers whose labels contain any of the keywords (keyword1 or keyword2) are kept; others are discarded.
+The output is split by line breaks and numbers. The text before a number is considered the label of the number. If a keyword appears multiple times during a run, the last value is kept.
 
-### Dealing with Failures
+The `--keywords keyword1,keyword2` option can be used to filter results - only numbers whose labels contain any of the keywords (keyword1 or keyword2) are kept; others are discarded. Keywords can contain spaces and special characters (e.g., `--keywords "training time,test-accuracy"`). **Important**: If keywords are specified and any keyword is not found in the output, the experiment is treated as failed and will not be included in the results.
 
-If any experiment fails, it will not be included in the result file. To continue an experiment, run the original command with an additional option `--continue_from incomplete_result`. This option copies the results of any combinations that already exist in the incomplete_result file, therefore only running the combinations that previously failed.
+### Output Format
+
+Results are saved to a CSV file (default: `results.csv`, or specify with `--output FILE`). Each line represents one experiment. The columns are:
+
+1. Parameter values (the variables used to run the experiment)
+2. Extracted metrics (keywords found in the output)
+3. Complete stdout (if not using `--stderr` only)
+4. Complete stderr (if not using `--stdout` only)
+
+The CSV format is compatible with Excel and other spreadsheet applications. Fields containing commas, quotes, or newlines are properly escaped.
+
+### Dealing with Failures and Resuming Experiments
+
+If any experiment fails, it will not be included in the result file, but the error output (stdout and stderr) will be printed to help with debugging.
+
+`runexp` automatically skips experiments that have already been completed. If you run the same command again, it will check the output file and skip any parameter combinations that already exist in the results, only running combinations that are missing. This allows you to easily resume interrupted experiment runs without needing to manually track progress.
+
+## Examples
+
+The `examples/` directory contains a complete test suite demonstrating all features:
+
+- `test_experiment.py` - A simple Python script that reads parameters and outputs results
+- `run_tests.sh` - A comprehensive test script showing all runexp features
+
+To run the examples:
+
+```bash
+# Run all tests
+bash examples/run_tests.sh
+
+# Or try individual examples
+./target/release/runexp --gpu 1,2 --batchsize 32,64 python3 examples/test_experiment.py
+./target/release/runexp --output my_results.csv --keywords accuracy,loss --gpu 1,2 --batchsize 32 python3 examples/test_experiment.py
+```
