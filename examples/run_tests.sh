@@ -74,7 +74,7 @@ echo "First 3 lines of test_results1.csv:"
 head -3 test_results1.csv
 echo
 echo "All CSV files created:"
-ls -lh test_results*.csv 2>/dev/null | grep -v test_results6.csv || true
+ls -lh test_results[1-57].csv 2>/dev/null || true
 echo
 
 echo "=== All tests passed! ==="
