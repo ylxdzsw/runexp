@@ -70,8 +70,8 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
     // If no command is provided, read from stdin
     if command.is_empty() {
         let mut stdin_content = String::new();
-        if let Err(_) = io::stdin().read_to_string(&mut stdin_content) {
-            return Err("Failed to read from stdin".to_string());
+        if let Err(e) = io::stdin().read_to_string(&mut stdin_content) {
+            return Err(format!("Failed to read from stdin: {}", e));
         }
         
         if !stdin_content.trim().is_empty() {

@@ -79,35 +79,53 @@ fn parse_expr(expr: &str, context: &HashMap<String, String>) -> Result<String, S
 fn parse_int_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
     let expr = expr.trim();
     
-    // Handle exponentiation (highest precedence)
-    if expr.contains('^') {
-        let parts: Vec<&str> = expr.split('^').collect();
-        if parts.len() == 2 {
-            let base = parse_int_expr(parts[0].trim(), context)?;
-            let exp = parse_int_expr(parts[1].trim(), context)?;
-            return Ok(base.pow(exp as u32));
-        }
-    }
-    
-    // Handle addition
+    // Handle addition (lowest precedence)
     if expr.contains('+') {
         let parts: Vec<&str> = expr.split('+').collect();
         let mut sum = 0;
         for part in parts {
-            sum += parse_int_expr(part.trim(), context)?;
+            sum += parse_mult_expr(part.trim(), context)?;
         }
         return Ok(sum);
     }
+    
+    parse_mult_expr(expr, context)
+}
+
+fn parse_mult_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
+    let expr = expr.trim();
     
     // Handle multiplication with explicit *
     if expr.contains('*') {
         let parts: Vec<&str> = expr.split('*').collect();
         let mut product = 1;
         for part in parts {
-            product *= parse_int_expr(part.trim(), context)?;
+            product *= parse_exp_expr(part.trim(), context)?;
         }
         return Ok(product);
     }
+    
+    parse_exp_expr(expr, context)
+}
+
+fn parse_exp_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
+    let expr = expr.trim();
+    
+    // Handle exponentiation (highest precedence for binary operators)
+    if expr.contains('^') {
+        let parts: Vec<&str> = expr.split('^').collect();
+        if parts.len() == 2 {
+            let base = parse_atom_expr(parts[0].trim(), context)?;
+            let exp = parse_exp_expr(parts[1].trim(), context)?; // Right associative
+            return Ok(base.pow(exp as u32));
+        }
+    }
+    
+    parse_atom_expr(expr, context)
+}
+
+fn parse_atom_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
+    let expr = expr.trim();
     
     // Handle implicit multiplication (e.g., "2n", "32gpu")
     // Try to find where number ends and variable begins
@@ -123,22 +141,15 @@ fn parse_int_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, 
         let num_part = &expr[..num_end];
         let var_part = &expr[num_end..];
         let num = num_part.parse::<i64>().map_err(|_| "Invalid number")?;
-        let var_val = parse_int_expr(var_part, context)?;
+        let var_val = parse_atom_expr(var_part, context)?;
         return Ok(num * var_val);
     }
     
-    // Check if it's a variable (lowercase version)
-    let lower_expr = expr.to_lowercase();
-    if context.contains_key(&lower_expr) {
-        let val = &context[&lower_expr];
-        return val.parse::<i64>().map_err(|_| format!("Variable {} is not a number", expr));
-    }
-    
-    // Check if it's a variable (uppercase version)
-    let upper_expr = expr.to_uppercase();
-    if context.contains_key(&upper_expr) {
-        let val = &context[&upper_expr];
-        return val.parse::<i64>().map_err(|_| format!("Variable {} is not a number", expr));
+    // Check if it's a variable (case insensitive)
+    for (key, value) in context.iter() {
+        if key.eq_ignore_ascii_case(expr) {
+            return value.parse::<i64>().map_err(|_| format!("Variable {} is not a number", expr));
+        }
     }
     
     // Try to parse as literal number
@@ -189,5 +200,26 @@ mod tests {
         assert_eq!(combos[1].params.get("N").unwrap(), "2");
         assert_eq!(combos[1].params.get("GPU").unwrap(), "2");
         assert_eq!(combos[1].params.get("BATCHSIZE").unwrap(), "64");
+    }
+    
+    #[test]
+    fn test_operator_precedence() {
+        let params = vec![
+            ("N".to_string(), "2".to_string()),
+            ("VALUE".to_string(), "n+3*2".to_string()), // Should be 2+6=8, not (2+3)*2=10
+        ];
+        
+        let combos = evaluate_params(&params).unwrap();
+        assert_eq!(combos.len(), 1);
+        assert_eq!(combos[0].params.get("VALUE").unwrap(), "8");
+        
+        let params2 = vec![
+            ("N".to_string(), "2".to_string()),
+            ("VALUE".to_string(), "n+n^2".to_string()), // Should be 2+4=6, not (2+2)^2=16
+        ];
+        
+        let combos2 = evaluate_params(&params2).unwrap();
+        assert_eq!(combos2.len(), 1);
+        assert_eq!(combos2[0].params.get("VALUE").unwrap(), "6");
     }
 }

@@ -91,15 +91,19 @@ fn execute_single(
         return Err(format!("Command failed with exit code: {:?}", output.status.code()));
     }
     
-    // Parse output
+    // Parse output based on options
     let mut parsed = HashMap::new();
     
-    if options.stdout_only || !options.stderr_only {
+    if options.stdout_only {
         let stdout = String::from_utf8_lossy(&output.stdout);
         parse_output(&stdout, &mut parsed, &options.keywords);
-    }
-    
-    if options.stderr_only || (!options.stdout_only && !options.stderr_only) {
+    } else if options.stderr_only {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        parse_output(&stderr, &mut parsed, &options.keywords);
+    } else {
+        // Parse both stdout and stderr by default
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        parse_output(&stdout, &mut parsed, &options.keywords);
         let stderr = String::from_utf8_lossy(&output.stderr);
         parse_output(&stderr, &mut parsed, &options.keywords);
     }
@@ -199,14 +203,13 @@ fn load_existing_results(filename: &str) -> Result<Vec<ExperimentResult>, String
             continue;
         }
         
-        // We need to determine which columns are params and which are metrics
-        // For simplicity, we'll treat all columns as either params or metrics
-        // In practice, we should track which are which
         let mut params = HashMap::new();
         let mut metrics = HashMap::new();
         
         for (name, value) in column_names.iter().zip(values.iter()) {
-            // Heuristic: uppercase names are parameters
+            // Heuristic: Parameter names are uppercase (as set by the parser)
+            // while metric names from output typically have mixed case or lowercase.
+            // This works because the parser explicitly converts parameter names to uppercase.
             if name.chars().all(|c| c.is_uppercase() || !c.is_alphabetic()) {
                 params.insert(name.to_string(), value.to_string());
             } else {
