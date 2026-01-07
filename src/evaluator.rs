@@ -42,14 +42,41 @@ fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<
     for part in parts {
         let part = part.trim();
         
-        // Check for range (e.g., "1..4")
-        if part.contains("..") {
-            let range_parts: Vec<&str> = part.split("..").collect();
+        // Check for range (e.g., "1:4" or "1:10:2")
+        if part.contains(':') {
+            let range_parts: Vec<&str> = part.split(':').collect();
             if range_parts.len() == 2 {
+                // Format: start:end (step defaults to 1)
                 let start = parse_int_expr(range_parts[0].trim(), context)?;
                 let end = parse_int_expr(range_parts[1].trim(), context)?;
                 for i in start..end {
                     results.push(i.to_string());
+                }
+                continue;
+            } else if range_parts.len() == 3 {
+                // Format: start:end:step
+                let start = parse_int_expr(range_parts[0].trim(), context)?;
+                let end = parse_int_expr(range_parts[1].trim(), context)?;
+                let step = parse_int_expr(range_parts[2].trim(), context)?;
+                
+                if step == 0 {
+                    return Err("Step cannot be zero in range expression".to_string());
+                }
+                
+                if step > 0 && start < end {
+                    let mut i = start;
+                    while i < end {
+                        results.push(i.to_string());
+                        i += step;
+                    }
+                } else if step < 0 && start > end {
+                    let mut i = start;
+                    while i > end {
+                        results.push(i.to_string());
+                        i += step;
+                    }
+                } else {
+                    return Err("Invalid range: positive step requires start < end, negative step requires start > end".to_string());
                 }
                 continue;
             }
@@ -177,8 +204,9 @@ mod tests {
     
     #[test]
     fn test_range() {
+        // Test basic range start:end
         let params = vec![
-            ("N".to_string(), "1..4".to_string()),
+            ("N".to_string(), "1:4".to_string()),
         ];
         
         let combos = evaluate_params(&params).unwrap();
@@ -186,6 +214,32 @@ mod tests {
         assert_eq!(combos[0].params.get("N").unwrap(), "1");
         assert_eq!(combos[1].params.get("N").unwrap(), "2");
         assert_eq!(combos[2].params.get("N").unwrap(), "3");
+        
+        // Test range with positive step
+        let params_step = vec![
+            ("N".to_string(), "1:10:2".to_string()),
+        ];
+        
+        let combos_step = evaluate_params(&params_step).unwrap();
+        assert_eq!(combos_step.len(), 5); // 1, 3, 5, 7, 9
+        assert_eq!(combos_step[0].params.get("N").unwrap(), "1");
+        assert_eq!(combos_step[1].params.get("N").unwrap(), "3");
+        assert_eq!(combos_step[2].params.get("N").unwrap(), "5");
+        assert_eq!(combos_step[3].params.get("N").unwrap(), "7");
+        assert_eq!(combos_step[4].params.get("N").unwrap(), "9");
+        
+        // Test range with negative step
+        let params_neg = vec![
+            ("N".to_string(), "10:1:-2".to_string()),
+        ];
+        
+        let combos_neg = evaluate_params(&params_neg).unwrap();
+        assert_eq!(combos_neg.len(), 5); // 10, 8, 6, 4, 2
+        assert_eq!(combos_neg[0].params.get("N").unwrap(), "10");
+        assert_eq!(combos_neg[1].params.get("N").unwrap(), "8");
+        assert_eq!(combos_neg[2].params.get("N").unwrap(), "6");
+        assert_eq!(combos_neg[3].params.get("N").unwrap(), "4");
+        assert_eq!(combos_neg[4].params.get("N").unwrap(), "2");
     }
     
     #[test]
