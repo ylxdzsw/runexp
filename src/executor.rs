@@ -280,6 +280,10 @@ fn save_results(results: &[ExperimentResult], filename: &str, options: &Options)
     
     // Only add keyword columns if keywords are specified
     let keyword_columns: Vec<String> = options.keywords.clone();
+    // Pre-compute lowercase keywords to avoid repeated allocations in the loop
+    let keyword_columns_lower: Vec<String> = keyword_columns.iter()
+        .map(|k| k.to_lowercase())
+        .collect();
     headers.extend(keyword_columns.clone());
     
     // Add stdout/stderr columns based on options
@@ -310,10 +314,10 @@ fn save_results(results: &[ExperimentResult], filename: &str, options: &Options)
         }
         
         // Add keyword metric values (find matching metric for each keyword)
-        for keyword in &keyword_columns {
-            // Find the metric that matches this keyword
+        for keyword_lower in &keyword_columns_lower {
+            // Find the metric that matches this keyword (case-insensitive)
             let val = result.metrics.iter()
-                .find(|(label, _)| label.to_lowercase().contains(&keyword.to_lowercase()))
+                .find(|(label, _)| label.to_lowercase().contains(keyword_lower))
                 .map(|(_, v)| v.as_str())
                 .unwrap_or("");
             values.push(escape_csv_field(val));
@@ -584,10 +588,11 @@ mod tests {
     fn test_load_existing_results_compatible() {
         use std::io::Write;
         
-        // Create a temporary CSV file
-        let temp_path = "/tmp/test_runexp_compatible.csv";
+        // Create a temporary CSV file using std::env::temp_dir() for portability
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_runexp_compatible.csv");
         {
-            let mut file = File::create(temp_path).unwrap();
+            let mut file = File::create(&temp_path).unwrap();
             writeln!(file, "BATCHSIZE,GPU,accuracy,stdout,stderr").unwrap();
             writeln!(file, "32,1,0.95,\"output\",\"error\"").unwrap();
         }
@@ -596,13 +601,13 @@ mod tests {
         let expected_keywords = vec!["accuracy".to_string()];
         
         let result = load_existing_results(
-            temp_path,
+            temp_path.to_str().unwrap(),
             &expected_params,
             &expected_keywords
         );
         
         // Clean up
-        let _ = fs::remove_file(temp_path);
+        let _ = fs::remove_file(&temp_path);
         
         assert!(result.is_ok());
         let results = result.unwrap();
@@ -616,9 +621,10 @@ mod tests {
         use std::io::Write;
         
         // Create a temporary CSV file with different parameters
-        let temp_path = "/tmp/test_runexp_incompatible_params.csv";
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_runexp_incompatible_params.csv");
         {
-            let mut file = File::create(temp_path).unwrap();
+            let mut file = File::create(&temp_path).unwrap();
             writeln!(file, "BATCHSIZE,GPU,stdout,stderr").unwrap();
             writeln!(file, "32,1,\"output\",\"error\"").unwrap();
         }
@@ -628,13 +634,13 @@ mod tests {
         let expected_keywords: Vec<String> = vec![];
         
         let result = load_existing_results(
-            temp_path,
+            temp_path.to_str().unwrap(),
             &expected_params,
             &expected_keywords
         );
         
         // Clean up
-        let _ = fs::remove_file(temp_path);
+        let _ = fs::remove_file(&temp_path);
         
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("column count mismatch"));
@@ -645,9 +651,10 @@ mod tests {
         use std::io::Write;
         
         // Create a temporary CSV file with accuracy keyword
-        let temp_path = "/tmp/test_runexp_incompatible_keywords.csv";
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_runexp_incompatible_keywords.csv");
         {
-            let mut file = File::create(temp_path).unwrap();
+            let mut file = File::create(&temp_path).unwrap();
             writeln!(file, "BATCHSIZE,GPU,accuracy,stdout,stderr").unwrap();
             writeln!(file, "32,1,0.95,\"output\",\"error\"").unwrap();
         }
@@ -657,13 +664,13 @@ mod tests {
         let expected_keywords = vec!["loss".to_string()];
         
         let result = load_existing_results(
-            temp_path,
+            temp_path.to_str().unwrap(),
             &expected_params,
             &expected_keywords
         );
         
         // Clean up
-        let _ = fs::remove_file(temp_path);
+        let _ = fs::remove_file(&temp_path);
         
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("mismatch"));
