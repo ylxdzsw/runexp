@@ -1,3 +1,5 @@
+use std::io::{self, Read};
+
 #[derive(Debug, Clone)]
 pub struct Options {
     pub stdout_only: bool,
@@ -63,11 +65,21 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
     }
     
     // Rest is the command
-    let command = args[i..].to_vec();
+    let mut command = args[i..].to_vec();
     
+    // If no command is provided, read from stdin
     if command.is_empty() {
-        // Check if we should read from stdin
-        return Err("No command specified".to_string());
+        let mut stdin_content = String::new();
+        if let Err(_) = io::stdin().read_to_string(&mut stdin_content) {
+            return Err("Failed to read from stdin".to_string());
+        }
+        
+        if !stdin_content.trim().is_empty() {
+            // Use bash to execute the script from stdin
+            command = vec!["bash".to_string(), "-c".to_string(), stdin_content];
+        } else {
+            return Err("No command specified and no input from stdin".to_string());
+        }
     }
     
     Ok((params, command, options))
