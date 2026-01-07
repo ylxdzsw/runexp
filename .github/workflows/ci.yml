@@ -4,6 +4,8 @@ on: [push, pull_request]
 jobs:
   test:
     name: Test & Build
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +35,8 @@ jobs:
           path: target/${{ matrix.target }}/release/runexp
   release:
     name: Release
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test]
