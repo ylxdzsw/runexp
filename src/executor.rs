@@ -117,7 +117,8 @@ fn execute_single(
         parse_output(&stderr, &mut parsed, &options.keywords);
     } else {
         // Parse both stdout and stderr by default
-        let combined = format!("{}{}", stdout, stderr);
+        // Add newline delimiter to prevent joining last line of stdout with first line of stderr
+        let combined = format!("{}\n{}", stdout, stderr);
         parse_output(&combined, &mut parsed, &options.keywords);
     }
     
@@ -137,7 +138,7 @@ fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[S
         
         for i in 0..parts.len() {
             // Try to parse as number (support both integers and floats)
-            if let Ok(_) = parts[i].parse::<f64>() {
+            if let Ok(num) = parts[i].parse::<f64>() {
                 // Found a number, use preceding text as label
                 let label = if i > 0 {
                     parts[..i].join(" ")
@@ -159,7 +160,7 @@ fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[S
                 }
                 
                 // Keep the last value if keyword appears multiple times
-                results.insert(label, parts[i].to_string());
+                results.insert(label, num.to_string());
             }
         }
     }
