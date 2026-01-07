@@ -73,7 +73,9 @@ fn print_usage() {
     println!();
     println!("Parameters:");
     println!("  Parameters are specified as --name value");
-    println!("  Parameter names are automatically converted to uppercase for environment variables");
+    println!("  Parameter names are converted to uppercase environment variables");
+    println!("  Dashes and underscores in names are converted to underscores");
+    println!("  Example: --batch-size becomes BATCH_SIZE, --gpu becomes GPU");
     println!();
     println!("Values can contain:");
     println!("  - Comma-separated lists: 1,2,4");

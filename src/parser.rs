@@ -50,8 +50,8 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
             options.output_file = args[i].clone();
             i += 1;
         } else if arg.starts_with("--") {
-            // Parameter
-            let name = arg[2..].to_uppercase();
+            // Parameter: convert to uppercase and replace dashes with underscores
+            let name = arg[2..].to_uppercase().replace('-', "_");
             i += 1;
             if i >= args.len() {
                 return Err(format!("Parameter {} requires a value", arg));

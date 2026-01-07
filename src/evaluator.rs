@@ -280,4 +280,30 @@ mod tests {
         assert_eq!(combos2.len(), 1);
         assert_eq!(combos2[0].params.get("VALUE").unwrap(), "6");
     }
+    
+    #[test]
+    fn test_literal_strings() {
+        // Test literal strings without special symbols
+        let params = vec![
+            ("ROUTING".to_string(), "source,dest,both".to_string()),
+        ];
+        
+        let combos = evaluate_params(&params).unwrap();
+        assert_eq!(combos.len(), 3);
+        assert_eq!(combos[0].params.get("ROUTING").unwrap(), "source");
+        assert_eq!(combos[1].params.get("ROUTING").unwrap(), "dest");
+        assert_eq!(combos[2].params.get("ROUTING").unwrap(), "both");
+        
+        // Test mixing literals with numbers
+        let params2 = vec![
+            ("MODE".to_string(), "train,test,1,2".to_string()),
+        ];
+        
+        let combos2 = evaluate_params(&params2).unwrap();
+        assert_eq!(combos2.len(), 4);
+        assert_eq!(combos2[0].params.get("MODE").unwrap(), "train");
+        assert_eq!(combos2[1].params.get("MODE").unwrap(), "test");
+        assert_eq!(combos2[2].params.get("MODE").unwrap(), "1");
+        assert_eq!(combos2[3].params.get("MODE").unwrap(), "2");
+    }
 }
