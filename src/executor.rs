@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::{Command, Stdio};
 use std::fs::{self, File};
 use std::io::Write;
@@ -142,12 +142,23 @@ fn save_results(results: &[ExperimentResult], filename: &str) -> Result<(), Stri
         return Ok(());
     }
     
-    // Get all parameter names and metric names
-    let first = &results[0];
-    let mut param_names: Vec<String> = first.params.keys().cloned().collect();
+    // Collect all unique parameter names and metric names
+    let mut param_names_set = HashSet::new();
+    let mut metric_names_set = HashSet::new();
+    
+    for result in results {
+        for name in result.params.keys() {
+            param_names_set.insert(name.clone());
+        }
+        for name in result.metrics.keys() {
+            metric_names_set.insert(name.clone());
+        }
+    }
+    
+    let mut param_names: Vec<String> = param_names_set.into_iter().collect();
     param_names.sort();
     
-    let mut metric_names: Vec<String> = first.metrics.keys().cloned().collect();
+    let mut metric_names: Vec<String> = metric_names_set.into_iter().collect();
     metric_names.sort();
     
     // Write header
