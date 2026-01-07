@@ -49,14 +49,8 @@ fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<
                 // Format: start:end (step defaults to 1)
                 let start = parse_int_expr(range_parts[0].trim(), context)?;
                 let end = parse_int_expr(range_parts[1].trim(), context)?;
-                if start < end {
-                    for i in start..end {
-                        results.push(i.to_string());
-                    }
-                } else {
-                    for i in (end..start).rev() {
-                        results.push(i.to_string());
-                    }
+                for i in start..end {
+                    results.push(i.to_string());
                 }
                 continue;
             } else if range_parts.len() == 3 {
@@ -82,7 +76,7 @@ fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<
                         i += step;
                     }
                 } else {
-                    return Err("Invalid range: step direction doesn't match start/end order".to_string());
+                    return Err("Invalid range: positive step requires start < end, negative step requires start > end".to_string());
                 }
                 continue;
             }
@@ -221,7 +215,7 @@ mod tests {
         assert_eq!(combos[1].params.get("N").unwrap(), "2");
         assert_eq!(combos[2].params.get("N").unwrap(), "3");
         
-        // Test range with step
+        // Test range with positive step
         let params_step = vec![
             ("N".to_string(), "1:10:2".to_string()),
         ];
@@ -233,6 +227,19 @@ mod tests {
         assert_eq!(combos_step[2].params.get("N").unwrap(), "5");
         assert_eq!(combos_step[3].params.get("N").unwrap(), "7");
         assert_eq!(combos_step[4].params.get("N").unwrap(), "9");
+        
+        // Test range with negative step
+        let params_neg = vec![
+            ("N".to_string(), "10:1:-2".to_string()),
+        ];
+        
+        let combos_neg = evaluate_params(&params_neg).unwrap();
+        assert_eq!(combos_neg.len(), 5); // 10, 8, 6, 4, 2
+        assert_eq!(combos_neg[0].params.get("N").unwrap(), "10");
+        assert_eq!(combos_neg[1].params.get("N").unwrap(), "8");
+        assert_eq!(combos_neg[2].params.get("N").unwrap(), "6");
+        assert_eq!(combos_neg[3].params.get("N").unwrap(), "4");
+        assert_eq!(combos_neg[4].params.get("N").unwrap(), "2");
     }
     
     #[test]
