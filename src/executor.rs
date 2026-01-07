@@ -149,44 +149,102 @@ fn execute_single(
 }
 
 fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[String]) {
-    // Split by line breaks
-    for line in text.lines() {
+    // Split by both \n and \r to handle carriage returns (e.g., progress bars)
+    // This ensures we process each line refresh separately and keep only the last value
+    let lines: Vec<&str> = text.split(|c| c == '\n' || c == '\r').collect();
+    
+    for line in lines {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
         
-        // Split by whitespace and check for numbers
-        let parts: Vec<&str> = line.split_whitespace().collect();
+        // Parse numbers from the line without making assumptions about format
+        // Find all numbers in the line and use the preceding text as the label
+        extract_numbers_from_line(line, results, keywords);
+    }
+}
+
+// Extract all numbers from a line and their labels
+// Makes minimal assumptions - the label is simply the text before each number
+// A number is considered valid if it's not part of an alphanumeric identifier
+fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, keywords: &[String]) {
+    let mut search_start = 0;  // Position to start searching for the next number
+    let mut i = 0;
+    let chars: Vec<char> = line.chars().collect();
+    
+    while i < chars.len() {
+        // Check if we're at the start of a number
+        // A number should not be preceded by an alphanumeric character (to avoid parsing "F1" as having number "1")
+        let is_num_start = (chars[i].is_ascii_digit() || (chars[i] == '.' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit()))
+            && (i == 0 || !chars[i - 1].is_alphanumeric());
         
-        for i in 0..parts.len() {
-            // Try to parse as number (support both integers and floats)
-            if let Ok(num) = parts[i].parse::<f64>() {
-                // Found a number, use preceding text as label
-                let label = if i > 0 {
-                    parts[..i].join(" ")
+        if is_num_start {
+            // Found the start of a number
+            let num_start = i;
+            let mut num_end = i;
+            let mut has_dot = chars[i] == '.';
+            
+            // If we started with a dot, move past it
+            if has_dot {
+                num_end = i + 1;
+                i += 1;
+            }
+            
+            // Collect digits (and at most one decimal point)
+            while i < chars.len() {
+                if chars[i].is_ascii_digit() {
+                    num_end = i + 1;
+                    i += 1;
+                } else if chars[i] == '.' && !has_dot && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
+                    has_dot = true;
+                    num_end = i + 1;
+                    i += 1;
                 } else {
+                    break;
+                }
+            }
+            
+            // Extract the number string
+            let num_str: String = chars[num_start..num_end].iter().collect();
+            
+            // Validate it's a proper number
+            if let Ok(_parsed_num) = num_str.parse::<f64>() {
+                // Extract the label (everything from search_start to num_start)
+                let label: String = chars[search_start..num_start].iter().collect();
+                
+                // Use the label as-is, or "value" if empty
+                let label = if label.is_empty() {
                     "value".to_string()
+                } else {
+                    label
                 };
                 
-                // Remove trailing colons or other punctuation from label
-                let label = label.trim_end_matches(':').trim().to_string();
-                
                 // Check if label matches keywords (if specified)
-                if !keywords.is_empty() {
-                    let matches = keywords.iter().any(|kw| 
-                        label.to_lowercase().contains(&kw.to_lowercase())
-                    );
-                    if !matches {
-                        continue;
-                    }
+                if should_keep_label(&label, keywords) {
+                    // Keep the last value if keyword appears multiple times
+                    results.insert(label, num_str);
                 }
-                
-                // Keep the last value if keyword appears multiple times
-                results.insert(label, num.to_string());
             }
+            
+            // Update search_start for the next number
+            search_start = num_end;
+        } else {
+            i += 1;
         }
     }
+}
+
+
+// Helper function to check if a label matches the keywords filter
+fn should_keep_label(label: &str, keywords: &[String]) -> bool {
+    if keywords.is_empty() {
+        return true;
+    }
+    
+    keywords.iter().any(|kw| 
+        label.to_lowercase().contains(&kw.to_lowercase())
+    )
 }
 
 fn save_results(results: &[ExperimentResult], filename: &str, options: &Options) -> Result<(), String> {
@@ -379,4 +437,128 @@ fn parse_csv(content: &str) -> Result<Vec<Vec<String>>, String> {
 
 fn result_exists(existing: &[ExperimentResult], combo: &Combination) -> bool {
     existing.iter().any(|r| r.params == combo.params)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_output_basic() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        parse_output("accuracy: 0.95", &mut results, &keywords);
+        
+        // Label includes the colon and space
+        assert_eq!(results.get("accuracy: "), Some(&"0.95".to_string()));
+    }
+
+    #[test]
+    fn test_parse_output_no_space_after_colon() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        // Test with colon directly attached
+        parse_output("time:2.3ms", &mut results, &keywords);
+        
+        // Label includes the colon
+        assert_eq!(results.get("time:"), Some(&"2.3".to_string()));
+    }
+
+    #[test]
+    fn test_parse_output_with_units() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        parse_output("latency: 4.5us\nthroughput: 1000req/s", &mut results, &keywords);
+        
+        // Labels include trailing punctuation
+        assert_eq!(results.get("latency: "), Some(&"4.5".to_string()));
+        assert_eq!(results.get("throughput: "), Some(&"1000".to_string()));
+    }
+
+    #[test]
+    fn test_parse_output_carriage_return() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        // Simulate progress updates with \r
+        parse_output("progress: 10\rprogress: 50\rprogress: 100", &mut results, &keywords);
+        
+        // Should only keep the last value
+        assert_eq!(results.get("progress: "), Some(&"100".to_string()));
+    }
+
+    #[test]
+    fn test_parse_output_keep_label_as_is() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        parse_output(
+            "Test-Accuracy: 0.95\ntrain_loss: 1.234\nF1-Score (macro): 0.88",
+            &mut results,
+            &keywords
+        );
+        
+        // All labels keep their original format including colons and spaces
+        assert_eq!(results.get("Test-Accuracy: "), Some(&"0.95".to_string()));
+        assert_eq!(results.get("train_loss: "), Some(&"1.234".to_string()));
+        assert_eq!(results.get("F1-Score (macro): "), Some(&"0.88".to_string()));
+    }
+
+    #[test]
+    fn test_parse_output_with_keywords() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec!["accuracy".to_string()];
+        
+        parse_output("accuracy: 0.95\nloss: 1.234", &mut results, &keywords);
+        
+        // Should only include metrics matching keywords
+        assert_eq!(results.get("accuracy: "), Some(&"0.95".to_string()));
+        assert_eq!(results.get("loss: "), None);
+    }
+
+    #[test]
+    fn test_parse_output_multiple_values_same_keyword() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        parse_output("score: 10\nscore: 20\nscore: 30", &mut results, &keywords);
+        
+        // Should keep only the last value
+        assert_eq!(results.get("score: "), Some(&"30".to_string()));
+    }
+    
+    #[test]
+    fn test_parse_output_complex_line() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        // Test the example from the issue comment
+        parse_output("simulated 73us in 2.8s, 6000 events resolved", &mut results, &keywords);
+        
+        // First number: 73, label: "simulated "
+        assert_eq!(results.get("simulated "), Some(&"73".to_string()));
+        // Second number: 2.8, label: "us in "
+        assert_eq!(results.get("us in "), Some(&"2.8".to_string()));
+        // Third number: 6000, label: "s, "
+        assert_eq!(results.get("s, "), Some(&"6000".to_string()));
+    }
+    
+    #[test]
+    fn test_parse_output_minimal_assumptions() {
+        let mut results = HashMap::new();
+        let keywords: Vec<String> = vec![];
+        
+        // Various formats without making assumptions about punctuation
+        parse_output("throughput 1000req/s", &mut results, &keywords);
+        assert_eq!(results.get("throughput "), Some(&"1000".to_string()));
+        
+        parse_output("result=42", &mut results, &keywords);
+        assert_eq!(results.get("result="), Some(&"42".to_string()));
+        
+        parse_output("count(items) 99", &mut results, &keywords);
+        assert_eq!(results.get("count(items) "), Some(&"99".to_string()));
+    }
 }
