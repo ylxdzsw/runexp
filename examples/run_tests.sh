@@ -27,10 +27,10 @@ $RUNEXP --n 1,2 --gpu n --batchsize 32n --output test_results2.csv python3 examp
 echo "✓ Created test_results2.csv"
 echo
 
-echo "Test 3: With keyword filtering"
+echo "Test 3: With metric filtering"
 echo "-------------------------------"
-$RUNEXP --keywords accuracy,loss --gpu 1,2 --batchsize 32 --output test_results3.csv python3 examples/test_experiment.py
-echo "✓ Created test_results3.csv (filtered by keywords)"
+$RUNEXP --metrics accuracy,loss --gpu 1,2 --batchsize 32 --output test_results3.csv python3 examples/test_experiment.py
+echo "✓ Created test_results3.csv (filtered by metrics)"
 echo
 
 echo "Test 4: Auto-skip finished experiments"
@@ -52,21 +52,21 @@ EOF
 echo "✓ Created test_results5.csv using heredoc"
 echo
 
-echo "Test 6: Missing keyword error"
+echo "Test 6: Missing metric error"
 echo "------------------------------"
-echo "Testing with a non-existent keyword (should fail)..."
-if $RUNEXP --keywords "nonexistent" --gpu 1 --batchsize 32 --output test_results6.csv python3 examples/test_experiment.py 2>&1 | grep -q "Missing keywords"; then
-    echo "✓ Correctly failed when keyword not found"
+echo "Testing with a non-existent metric (should fail)..."
+if $RUNEXP --metrics "nonexistent" --gpu 1 --batchsize 32 --output test_results6.csv python3 examples/test_experiment.py 2>&1 | grep -q "Missing metrics"; then
+    echo "✓ Correctly failed when metric not found"
 else
-    echo "✗ Failed to detect missing keyword"
+    echo "✗ Failed to detect missing metric"
     exit 1
 fi
 echo
 
-echo "Test 7: Keywords with spaces"
+echo "Test 7: Metrics with spaces"
 echo "-----------------------------"
-$RUNEXP --keywords "training time,GPU count" --gpu 1 --batchsize 32 --output test_results7.csv python3 examples/test_experiment.py
-echo "✓ Keywords with spaces work correctly"
+$RUNEXP --metrics "training time,GPU count" --gpu 1 --batchsize 32 --output test_results7.csv python3 examples/test_experiment.py
+echo "✓ Metrics with spaces work correctly"
 echo
 
 echo "=== Showing sample output ==="
