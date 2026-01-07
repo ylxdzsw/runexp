@@ -68,7 +68,7 @@ fn print_usage() {
     println!("  --stdout               Parse output only from stdout");
     println!("  --stderr               Parse output only from stderr");
     println!("  --keywords k1,k2       Filter results by keywords (comma-separated)");
-    println!("  --continue_from FILE   Continue from incomplete results");
+    println!("  --output FILE          Output file (default: results.csv)");
     println!("  -h, --help             Show this help message");
     println!();
     println!("Parameters:");
@@ -101,6 +101,6 @@ fn print_usage() {
     println!("  # Filter results by keywords");
     println!("  runexp --keywords accuracy --gpu 1,2 --batchsize 32 python train.py");
     println!();
-    println!("  # Continue from incomplete results");
-    println!("  runexp --continue_from runexp_results.txt --gpu 1,2 --batchsize 32 python train.py");
+    println!("  # Specify output file");
+    println!("  runexp --output my_results.csv --gpu 1,2 --batchsize 32 python train.py");
 }

@@ -5,7 +5,7 @@ pub struct Options {
     pub stdout_only: bool,
     pub stderr_only: bool,
     pub keywords: Vec<String>,
-    pub continue_from: Option<String>,
+    pub output_file: String,
 }
 
 impl Default for Options {
@@ -14,7 +14,7 @@ impl Default for Options {
             stdout_only: false,
             stderr_only: false,
             keywords: Vec::new(),
-            continue_from: None,
+            output_file: "results.csv".to_string(),
         }
     }
 }
@@ -41,12 +41,12 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
             }
             options.keywords = args[i].split(',').map(|s| s.to_string()).collect();
             i += 1;
-        } else if arg == "--continue_from" {
+        } else if arg == "--output" {
             i += 1;
             if i >= args.len() {
-                return Err("--continue_from requires an argument".to_string());
+                return Err("--output requires an argument".to_string());
             }
-            options.continue_from = Some(args[i].clone());
+            options.output_file = args[i].clone();
             i += 1;
         } else if arg.starts_with("--") {
             // Parameter
