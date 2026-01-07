@@ -4,7 +4,7 @@ use std::io::{self, Read};
 pub struct Options {
     pub stdout_only: bool,
     pub stderr_only: bool,
-    pub keywords: Vec<String>,
+    pub metrics: Vec<String>,
     pub output_file: String,
 }
 
@@ -13,7 +13,7 @@ impl Default for Options {
         Options {
             stdout_only: false,
             stderr_only: false,
-            keywords: Vec::new(),
+            metrics: Vec::new(),
             output_file: "results.csv".to_string(),
         }
     }
@@ -33,12 +33,12 @@ pub fn parse_args(args: &[String]) -> Result<(Vec<(String, String)>, Vec<String>
         } else if arg == "--stderr" {
             options.stderr_only = true;
             i += 1;
-        } else if arg == "--keywords" {
+        } else if arg == "--metrics" {
             i += 1;
             if i >= args.len() {
-                return Err("--keywords requires an argument".to_string());
+                return Err("--metrics requires an argument".to_string());
             }
-            options.keywords = args[i].split(',').map(|s| s.trim().to_string()).collect();
+            options.metrics = args[i].split(',').map(|s| s.trim().to_string()).collect();
             i += 1;
         } else if arg == "--output" {
             i += 1;

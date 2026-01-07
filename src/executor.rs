@@ -31,7 +31,7 @@ pub fn execute_experiments(
     
     // Load existing results if output file exists and validate compatibility
     let existing_results = if std::path::Path::new(&options.output_file).exists() {
-        match load_existing_results(&options.output_file, &expected_params, &options.keywords) {
+        match load_existing_results(&options.output_file, &expected_params, &options.metrics) {
             Ok(res) => res,
             Err(e) => {
                 return Err(format!("Existing result file is incompatible: {}. Please use a different output file or remove the existing one.", e));
@@ -123,43 +123,43 @@ fn execute_single(
     let mut parsed = HashMap::new();
     
     if options.stdout_only {
-        parse_output(&stdout, &mut parsed, &options.keywords);
+        parse_output(&stdout, &mut parsed, &options.metrics);
     } else if options.stderr_only {
-        parse_output(&stderr, &mut parsed, &options.keywords);
+        parse_output(&stderr, &mut parsed, &options.metrics);
     } else {
         // Parse both stdout and stderr by default
         // Add newline delimiter to prevent joining last line of stdout with first line of stderr
         let combined = format!("{}\n{}", stdout, stderr);
-        parse_output(&combined, &mut parsed, &options.keywords);
+        parse_output(&combined, &mut parsed, &options.metrics);
     }
     
-    // If keywords are specified, check that all were found
-    if !options.keywords.is_empty() {
-        let mut missing_keywords = Vec::new();
-        for keyword in &options.keywords {
-            // Check if any metric label contains this keyword
+    // If metrics are specified, check that all were found
+    if !options.metrics.is_empty() {
+        let mut missing_metrics = Vec::new();
+        for metric in &options.metrics {
+            // Check if any metric label contains this metric
             let found = parsed.keys().any(|label| 
-                label.to_lowercase().contains(&keyword.to_lowercase())
+                label.to_lowercase().contains(&metric.to_lowercase())
             );
             if !found {
-                missing_keywords.push(keyword.clone());
+                missing_metrics.push(metric.clone());
             }
         }
         
-        if !missing_keywords.is_empty() {
+        if !missing_metrics.is_empty() {
             // Write the collected stdout and stderr to runexp's output so user can inspect
             eprintln!("=== stdout ===");
             eprint!("{}", stdout);
             eprintln!("=== stderr ===");
             eprint!("{}", stderr);
-            return Err(format!("Missing keywords in output: {}", missing_keywords.join(", ")));
+            return Err(format!("Missing metrics in output: {}", missing_metrics.join(", ")));
         }
     }
     
     Ok((parsed, stdout, stderr))
 }
 
-fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[String]) {
+fn parse_output(text: &str, results: &mut HashMap<String, String>, metrics: &[String]) {
     // Split by both \n and \r to handle carriage returns (e.g., progress bars)
     // This ensures we process each line refresh separately and keep only the last value
     let lines: Vec<&str> = text.split(|c| c == '\n' || c == '\r').collect();
@@ -172,14 +172,14 @@ fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[S
         
         // Parse numbers from the line without making assumptions about format
         // Find all numbers in the line and use the preceding text as the label
-        extract_numbers_from_line(line, results, keywords);
+        extract_numbers_from_line(line, results, metrics);
     }
 }
 
 // Extract numbers from a line, using preceding text as labels.
 // Numbers following alphanumeric chars (e.g., "F1") are skipped to avoid false matches.
 // Limitation: This may incorrectly parse numbers in complex contexts like version strings.
-fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, keywords: &[String]) {
+fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, metrics: &[String]) {
     let mut search_start = 0;  // Position to start searching for the next number
     let mut i = 0;
     let chars: Vec<char> = line.chars().collect();
@@ -231,9 +231,9 @@ fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, 
                     label
                 };
                 
-                // Check if label matches keywords (if specified)
-                if should_keep_label(&label, keywords) {
-                    // Keep the last value if keyword appears multiple times
+                // Check if label matches metrics (if specified)
+                if should_keep_label(&label, metrics) {
+                    // Keep the last value if metric appears multiple times
                     results.insert(label, num_str);
                 }
             }
@@ -246,13 +246,13 @@ fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, 
     }
 }
 
-fn should_keep_label(label: &str, keywords: &[String]) -> bool {
-    if keywords.is_empty() {
+fn should_keep_label(label: &str, metrics: &[String]) -> bool {
+    if metrics.is_empty() {
         return true;
     }
     
-    keywords.iter().any(|kw| 
-        label.to_lowercase().contains(&kw.to_lowercase())
+    metrics.iter().any(|m| 
+        label.to_lowercase().contains(&m.to_lowercase())
     )
 }
 
@@ -275,16 +275,16 @@ fn save_results(results: &[ExperimentResult], filename: &str, options: &Options)
     let mut param_names: Vec<String> = param_names_set.into_iter().collect();
     param_names.sort();
     
-    // Build header: params, then keyword columns (if any), then stdout and/or stderr
+    // Build header: params, then metric columns (if any), then stdout and/or stderr
     let mut headers = param_names.clone();
     
-    // Only add keyword columns if keywords are specified
-    let keyword_columns: Vec<String> = options.keywords.clone();
-    // Pre-compute lowercase keywords to avoid repeated allocations in the loop
-    let keyword_columns_lower: Vec<String> = keyword_columns.iter()
-        .map(|k| k.to_lowercase())
+    // Only add metric columns if metrics are specified
+    let metric_columns: Vec<String> = options.metrics.clone();
+    // Pre-compute lowercase metrics to avoid repeated allocations in the loop
+    let metric_columns_lower: Vec<String> = metric_columns.iter()
+        .map(|m| m.to_lowercase())
         .collect();
-    headers.extend(keyword_columns.clone());
+    headers.extend(metric_columns.clone());
     
     // Add stdout/stderr columns based on options
     if options.stdout_only {
@@ -313,11 +313,11 @@ fn save_results(results: &[ExperimentResult], filename: &str, options: &Options)
             values.push(escape_csv_field(val));
         }
         
-        // Add keyword metric values (find matching metric for each keyword)
-        for keyword_lower in &keyword_columns_lower {
-            // Find the metric that matches this keyword (case-insensitive)
+        // Add metric values (find matching metric for each metric name)
+        for metric_lower in &metric_columns_lower {
+            // Find the metric that matches this metric name (case-insensitive)
             let val = result.metrics.iter()
-                .find(|(label, _)| label.to_lowercase().contains(keyword_lower))
+                .find(|(label, _)| label.to_lowercase().contains(metric_lower))
                 .map(|(_, v)| v.as_str())
                 .unwrap_or("");
             values.push(escape_csv_field(val));
@@ -354,7 +354,7 @@ fn escape_csv_field(field: &str) -> String {
 fn load_existing_results(
     filename: &str,
     expected_params: &[String],
-    expected_keywords: &[String],
+    expected_metrics: &[String],
 ) -> Result<Vec<ExperimentResult>, String> {
     let contents = fs::read_to_string(filename)
         .map_err(|_| format!("Could not read file: {}", filename))?;
@@ -368,24 +368,24 @@ fn load_existing_results(
     let column_names = &records[0];
     
     // Validate compatibility: check that parameter columns match
-    // Expected columns: params (sorted), keywords, stdout/stderr
+    // Expected columns: params (sorted), metrics, stdout/stderr
     let num_params = expected_params.len();
-    let num_keywords = expected_keywords.len();
+    let num_metrics = expected_metrics.len();
     
     // Find where stdout/stderr columns start
     let stdout_idx = column_names.iter().position(|c| c == "stdout");
     let stderr_idx = column_names.iter().position(|c| c == "stderr");
     
-    // Determine the number of columns before stdout/stderr (params + keywords)
+    // Determine the number of columns before stdout/stderr (params + metrics)
     let data_columns_end = stdout_idx.or(stderr_idx)
         .ok_or_else(|| "Missing stdout/stderr columns in result file".to_string())?;
     
-    // The file should have: params + keywords columns before stdout/stderr
-    let expected_data_columns = num_params + num_keywords;
+    // The file should have: params + metrics columns before stdout/stderr
+    let expected_data_columns = num_params + num_metrics;
     if data_columns_end != expected_data_columns {
         return Err(format!(
-            "Parameter/keyword column count mismatch: file has {} data columns, expected {} ({} params + {} keywords)",
-            data_columns_end, expected_data_columns, num_params, num_keywords
+            "Parameter/metric column count mismatch: file has {} data columns, expected {} ({} params + {} metrics)",
+            data_columns_end, expected_data_columns, num_params, num_metrics
         ));
     }
     
@@ -402,15 +402,15 @@ fn load_existing_results(
         }
     }
     
-    // Verify keyword columns match
-    let file_keywords: Vec<&String> = column_names[num_params..data_columns_end].iter().collect();
-    for (i, expected_keyword) in expected_keywords.iter().enumerate() {
-        if file_keywords.get(i) != Some(&expected_keyword) {
+    // Verify metric columns match
+    let file_metrics: Vec<&String> = column_names[num_params..data_columns_end].iter().collect();
+    for (i, expected_metric) in expected_metrics.iter().enumerate() {
+        if file_metrics.get(i) != Some(&expected_metric) {
             return Err(format!(
-                "Keyword column mismatch at position {}: file has '{}', expected '{}'",
+                "Metric column mismatch at position {}: file has '{}', expected '{}'",
                 i,
-                file_keywords.get(i).map(|s| s.as_str()).unwrap_or("<missing>"),
-                expected_keyword
+                file_metrics.get(i).map(|s| s.as_str()).unwrap_or("<missing>"),
+                expected_metric
             ));
         }
     }
@@ -437,7 +437,7 @@ fn load_existing_results(
                 // It's a parameter
                 params.insert(name.to_string(), value.to_string());
             } else if idx < data_columns_end {
-                // It's a keyword metric - store with keyword as key
+                // It's a metric - store with metric name as key
                 metrics.insert(name.to_string(), value.to_string());
             }
         }
@@ -511,47 +511,47 @@ mod tests {
 
     #[test]
     fn test_parse_output_formats() {
-        let keywords: Vec<String> = vec![];
+        let metrics: Vec<String> = vec![];
         let mut results = HashMap::new();
         
         // Basic colon-space format
-        parse_output("accuracy: 0.95", &mut results, &keywords);
+        parse_output("accuracy: 0.95", &mut results, &metrics);
         assert_eq!(results.get("accuracy: "), Some(&"0.95".to_string()));
         
         // No space after colon
-        parse_output("time:2.3ms", &mut results, &keywords);
+        parse_output("time:2.3ms", &mut results, &metrics);
         assert_eq!(results.get("time:"), Some(&"2.3".to_string()));
         
         // With units
-        parse_output("latency: 4.5us", &mut results, &keywords);
+        parse_output("latency: 4.5us", &mut results, &metrics);
         assert_eq!(results.get("latency: "), Some(&"4.5".to_string()));
         
         // Equals sign
-        parse_output("result=42", &mut results, &keywords);
+        parse_output("result=42", &mut results, &metrics);
         assert_eq!(results.get("result="), Some(&"42".to_string()));
         
         // Space-separated
-        parse_output("count(items) 99", &mut results, &keywords);
+        parse_output("count(items) 99", &mut results, &metrics);
         assert_eq!(results.get("count(items) "), Some(&"99".to_string()));
     }
 
     #[test]
     fn test_parse_output_special_cases() {
-        let keywords: Vec<String> = vec![];
+        let metrics: Vec<String> = vec![];
         
         // Carriage return (progress bar simulation) - keep last value
         let mut results = HashMap::new();
-        parse_output("progress: 10\rprogress: 50\rprogress: 100", &mut results, &keywords);
+        parse_output("progress: 10\rprogress: 50\rprogress: 100", &mut results, &metrics);
         assert_eq!(results.get("progress: "), Some(&"100".to_string()));
         
         // Multiple values with same label - keep last
         let mut results = HashMap::new();
-        parse_output("score: 10\nscore: 20\nscore: 30", &mut results, &keywords);
+        parse_output("score: 10\nscore: 20\nscore: 30", &mut results, &metrics);
         assert_eq!(results.get("score: "), Some(&"30".to_string()));
         
         // Complex line with multiple numbers
         let mut results = HashMap::new();
-        parse_output("simulated 73us in 2.8s, 6000 events resolved", &mut results, &keywords);
+        parse_output("simulated 73us in 2.8s, 6000 events resolved", &mut results, &metrics);
         assert_eq!(results.get("simulated "), Some(&"73".to_string()));
         assert_eq!(results.get("us in "), Some(&"2.8".to_string()));
         assert_eq!(results.get("s, "), Some(&"6000".to_string()));
@@ -560,12 +560,12 @@ mod tests {
     #[test]
     fn test_parse_output_labels_preserved() {
         let mut results = HashMap::new();
-        let keywords: Vec<String> = vec![];
+        let metrics: Vec<String> = vec![];
         
         parse_output(
             "Test-Accuracy: 0.95\ntrain_loss: 1.234\nF1-Score (macro): 0.88",
             &mut results,
-            &keywords
+            &metrics
         );
         
         assert_eq!(results.get("Test-Accuracy: "), Some(&"0.95".to_string()));
@@ -574,11 +574,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_output_keyword_filtering() {
+    fn test_parse_output_metric_filtering() {
         let mut results = HashMap::new();
-        let keywords = vec!["accuracy".to_string()];
+        let metrics = vec!["accuracy".to_string()];
         
-        parse_output("accuracy: 0.95\nloss: 1.234", &mut results, &keywords);
+        parse_output("accuracy: 0.95\nloss: 1.234", &mut results, &metrics);
         
         assert_eq!(results.get("accuracy: "), Some(&"0.95".to_string()));
         assert_eq!(results.get("loss: "), None);
@@ -598,12 +598,12 @@ mod tests {
         }
         
         let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string()];
-        let expected_keywords = vec!["accuracy".to_string()];
+        let expected_metrics = vec!["accuracy".to_string()];
         
         let result = load_existing_results(
             temp_path.to_str().unwrap(),
             &expected_params,
-            &expected_keywords
+            &expected_metrics
         );
         
         // Clean up
@@ -631,12 +631,12 @@ mod tests {
         
         // Expect different parameters (3 instead of 2)
         let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string(), "LR".to_string()];
-        let expected_keywords: Vec<String> = vec![];
+        let expected_metrics: Vec<String> = vec![];
         
         let result = load_existing_results(
             temp_path.to_str().unwrap(),
             &expected_params,
-            &expected_keywords
+            &expected_metrics
         );
         
         // Clean up
@@ -647,12 +647,12 @@ mod tests {
     }
 
     #[test]
-    fn test_load_existing_results_incompatible_keywords() {
+    fn test_load_existing_results_incompatible_metrics() {
         use std::io::Write;
         
-        // Create a temporary CSV file with accuracy keyword
+        // Create a temporary CSV file with accuracy metric
         let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join("test_runexp_incompatible_keywords.csv");
+        let temp_path = temp_dir.join("test_runexp_incompatible_metrics.csv");
         {
             let mut file = File::create(&temp_path).unwrap();
             writeln!(file, "BATCHSIZE,GPU,accuracy,stdout,stderr").unwrap();
@@ -660,13 +660,13 @@ mod tests {
         }
         
         let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string()];
-        // Expect different keywords
-        let expected_keywords = vec!["loss".to_string()];
+        // Expect different metrics
+        let expected_metrics = vec!["loss".to_string()];
         
         let result = load_existing_results(
             temp_path.to_str().unwrap(),
             &expected_params,
-            &expected_keywords
+            &expected_metrics
         );
         
         // Clean up

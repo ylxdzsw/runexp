@@ -67,7 +67,7 @@ fn print_usage() {
     println!("Options:");
     println!("  --stdout               Parse output only from stdout");
     println!("  --stderr               Parse output only from stderr");
-    println!("  --keywords k1,k2       Filter results by keywords (comma-separated)");
+    println!("  --metrics m1,m2        Filter results by metrics (comma-separated)");
     println!("  --output FILE          Output file (default: results.csv)");
     println!("  -h, --help             Show this help message");
     println!();
@@ -100,8 +100,8 @@ fn print_usage() {
     println!("  python evaluate.py");
     println!("  EOF");
     println!();
-    println!("  # Filter results by keywords");
-    println!("  runexp --keywords accuracy --gpu 1,2 --batchsize 32 python train.py");
+    println!("  # Filter results by metrics");
+    println!("  runexp --metrics accuracy --gpu 1,2 --batchsize 32 python train.py");
     println!();
     println!("  # Specify output file");
     println!("  runexp --output my_results.csv --gpu 1,2 --batchsize 32 python train.py");

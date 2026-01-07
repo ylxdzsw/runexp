@@ -19,11 +19,11 @@ Suppose our experiment script is as follows:
 ```python
 import os
 ngpu = int(os.environ["GPU"])  # Parameter names are converted to uppercase
-batch_size = int(os.environ["BATCH_SIZE"])  # Dashes and underscores become underscores
+batchsize = int(os.environ["BATCHSIZE"])  # Dashes and underscores become underscores
 
 import random
 accuracy = random.random()
-time = batch_size / ngpu + random.random() 
+time = batchsize / ngpu + random.random() 
 
 print("accuracy: ", accuracy)
 print("time: ", time)
@@ -109,18 +109,18 @@ Currently supported expressions include:
 
 `runexp` collects stdout and stderr (both by default, or only one with `--stdout` or `--stderr`). The output is split by line breaks and numbers. The text before a number is considered its label. If a label appears multiple times, the last value is kept.
 
-The `--keywords keyword1,keyword2` option filters results - only numbers whose labels contain any keyword are kept, and only those keywords become columns in the output CSV. Keywords can contain spaces (e.g., `--keywords "training time,test-accuracy"`). **Important**: If any specified keyword is not found, the experiment is treated as failed.
+The `--metrics metric1,metric2` option filters results - only numbers whose labels contain any metric are kept, and only those metrics become columns in the output CSV. Metrics can contain spaces (e.g., `--metrics "training time,test-accuracy"`). **Important**: If any specified metric is not found, the experiment is treated as failed.
 
 ### Output Format
 
 Results are saved to a CSV file (default: `results.csv`, or specify with `--output FILE`). Columns are:
 
 1. Parameter values (sorted alphabetically)
-2. Keyword columns (only if `--keywords` is specified)
+2. Metric columns (only if `--metrics` is specified)
 3. Complete stdout (unless `--stderr` only)
 4. Complete stderr (unless `--stdout` only)
 
-Note: If no keywords are specified, the output only contains parameter values and stdout/stderr.
+Note: If no metrics are specified, the output only contains parameter values and stdout/stderr.
 
 ### Dealing with Failures and Resuming
 
@@ -128,7 +128,7 @@ Failed experiments are not included in results, but their stdout/stderr are prin
 
 `runexp` automatically skips completed experiments. Re-running the same command resumes from where it left off.
 
-**Important**: When resuming, `runexp` validates that the existing result file is compatible with the current arguments. If the parameter names or keywords don't match, `runexp` will error out to prevent accidental data corruption. Use a different output file name or remove the existing file to start fresh.
+**Important**: When resuming, `runexp` validates that the existing result file is compatible with the current arguments. If the parameter names or metrics don't match, `runexp` will error out to prevent accidental data corruption. Use a different output file name or remove the existing file to start fresh.
 
 ## Examples
 
