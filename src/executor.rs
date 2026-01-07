@@ -165,9 +165,9 @@ fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[S
     }
 }
 
-// Extract all numbers from a line and their labels
-// Makes minimal assumptions - the label is simply the text before each number
-// A number is considered valid if it's not part of an alphanumeric identifier
+// Extract numbers from a line, using preceding text as labels.
+// Numbers following alphanumeric chars (e.g., "F1") are skipped to avoid false matches.
+// Limitation: This may incorrectly parse numbers in complex contexts like version strings.
 fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, keywords: &[String]) {
     let mut search_start = 0;  // Position to start searching for the next number
     let mut i = 0;
@@ -235,8 +235,6 @@ fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, 
     }
 }
 
-
-// Helper function to check if a label matches the keywords filter
 fn should_keep_label(label: &str, keywords: &[String]) -> bool {
     if keywords.is_empty() {
         return true;
@@ -342,7 +340,6 @@ fn load_existing_results(filename: &str) -> Result<Vec<ExperimentResult>, String
     let contents = fs::read_to_string(filename)
         .map_err(|_| format!("Could not read file: {}", filename))?;
     
-    // Parse CSV manually to handle multi-line fields properly
     let records = parse_csv(&contents)?;
     
     if records.is_empty() {
@@ -368,10 +365,10 @@ fn load_existing_results(filename: &str) -> Result<Vec<ExperimentResult>, String
             } else if name == "stderr" {
                 stderr = value.clone();
             } else if name.chars().all(|c| c.is_uppercase() || !c.is_alphabetic()) {
-                // Parameter names are uppercase (as set by the parser)
+                // Heuristic: parameter names are UPPERCASE (set by parser)
+                // This may misclassify metrics with all-caps labels as parameters
                 params.insert(name.to_string(), value.to_string());
             } else {
-                // Metric names from output typically have mixed case or lowercase
                 metrics.insert(name.to_string(), value.to_string());
             }
         }
@@ -444,54 +441,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_output_basic() {
-        let mut results = HashMap::new();
+    fn test_parse_output_formats() {
         let keywords: Vec<String> = vec![];
+        let mut results = HashMap::new();
         
+        // Basic colon-space format
         parse_output("accuracy: 0.95", &mut results, &keywords);
-        
-        // Label includes the colon and space
         assert_eq!(results.get("accuracy: "), Some(&"0.95".to_string()));
-    }
-
-    #[test]
-    fn test_parse_output_no_space_after_colon() {
-        let mut results = HashMap::new();
-        let keywords: Vec<String> = vec![];
         
-        // Test with colon directly attached
+        // No space after colon
         parse_output("time:2.3ms", &mut results, &keywords);
-        
-        // Label includes the colon
         assert_eq!(results.get("time:"), Some(&"2.3".to_string()));
-    }
-
-    #[test]
-    fn test_parse_output_with_units() {
-        let mut results = HashMap::new();
-        let keywords: Vec<String> = vec![];
         
-        parse_output("latency: 4.5us\nthroughput: 1000req/s", &mut results, &keywords);
-        
-        // Labels include trailing punctuation
+        // With units
+        parse_output("latency: 4.5us", &mut results, &keywords);
         assert_eq!(results.get("latency: "), Some(&"4.5".to_string()));
-        assert_eq!(results.get("throughput: "), Some(&"1000".to_string()));
+        
+        // Equals sign
+        parse_output("result=42", &mut results, &keywords);
+        assert_eq!(results.get("result="), Some(&"42".to_string()));
+        
+        // Space-separated
+        parse_output("count(items) 99", &mut results, &keywords);
+        assert_eq!(results.get("count(items) "), Some(&"99".to_string()));
     }
 
     #[test]
-    fn test_parse_output_carriage_return() {
-        let mut results = HashMap::new();
+    fn test_parse_output_special_cases() {
         let keywords: Vec<String> = vec![];
         
-        // Simulate progress updates with \r
+        // Carriage return (progress bar simulation) - keep last value
+        let mut results = HashMap::new();
         parse_output("progress: 10\rprogress: 50\rprogress: 100", &mut results, &keywords);
-        
-        // Should only keep the last value
         assert_eq!(results.get("progress: "), Some(&"100".to_string()));
+        
+        // Multiple values with same label - keep last
+        let mut results = HashMap::new();
+        parse_output("score: 10\nscore: 20\nscore: 30", &mut results, &keywords);
+        assert_eq!(results.get("score: "), Some(&"30".to_string()));
+        
+        // Complex line with multiple numbers
+        let mut results = HashMap::new();
+        parse_output("simulated 73us in 2.8s, 6000 events resolved", &mut results, &keywords);
+        assert_eq!(results.get("simulated "), Some(&"73".to_string()));
+        assert_eq!(results.get("us in "), Some(&"2.8".to_string()));
+        assert_eq!(results.get("s, "), Some(&"6000".to_string()));
     }
 
     #[test]
-    fn test_parse_output_keep_label_as_is() {
+    fn test_parse_output_labels_preserved() {
         let mut results = HashMap::new();
         let keywords: Vec<String> = vec![];
         
@@ -501,64 +499,19 @@ mod tests {
             &keywords
         );
         
-        // All labels keep their original format including colons and spaces
         assert_eq!(results.get("Test-Accuracy: "), Some(&"0.95".to_string()));
         assert_eq!(results.get("train_loss: "), Some(&"1.234".to_string()));
         assert_eq!(results.get("F1-Score (macro): "), Some(&"0.88".to_string()));
     }
 
     #[test]
-    fn test_parse_output_with_keywords() {
+    fn test_parse_output_keyword_filtering() {
         let mut results = HashMap::new();
-        let keywords: Vec<String> = vec!["accuracy".to_string()];
+        let keywords = vec!["accuracy".to_string()];
         
         parse_output("accuracy: 0.95\nloss: 1.234", &mut results, &keywords);
         
-        // Should only include metrics matching keywords
         assert_eq!(results.get("accuracy: "), Some(&"0.95".to_string()));
         assert_eq!(results.get("loss: "), None);
-    }
-
-    #[test]
-    fn test_parse_output_multiple_values_same_keyword() {
-        let mut results = HashMap::new();
-        let keywords: Vec<String> = vec![];
-        
-        parse_output("score: 10\nscore: 20\nscore: 30", &mut results, &keywords);
-        
-        // Should keep only the last value
-        assert_eq!(results.get("score: "), Some(&"30".to_string()));
-    }
-    
-    #[test]
-    fn test_parse_output_complex_line() {
-        let mut results = HashMap::new();
-        let keywords: Vec<String> = vec![];
-        
-        // Test the example from the issue comment
-        parse_output("simulated 73us in 2.8s, 6000 events resolved", &mut results, &keywords);
-        
-        // First number: 73, label: "simulated "
-        assert_eq!(results.get("simulated "), Some(&"73".to_string()));
-        // Second number: 2.8, label: "us in "
-        assert_eq!(results.get("us in "), Some(&"2.8".to_string()));
-        // Third number: 6000, label: "s, "
-        assert_eq!(results.get("s, "), Some(&"6000".to_string()));
-    }
-    
-    #[test]
-    fn test_parse_output_minimal_assumptions() {
-        let mut results = HashMap::new();
-        let keywords: Vec<String> = vec![];
-        
-        // Various formats without making assumptions about punctuation
-        parse_output("throughput 1000req/s", &mut results, &keywords);
-        assert_eq!(results.get("throughput "), Some(&"1000".to_string()));
-        
-        parse_output("result=42", &mut results, &keywords);
-        assert_eq!(results.get("result="), Some(&"42".to_string()));
-        
-        parse_output("count(items) 99", &mut results, &keywords);
-        assert_eq!(results.get("count(items) "), Some(&"99".to_string()));
     }
 }
