@@ -169,7 +169,7 @@ fn parse_output(text: &str, results: &mut HashMap<String, String>, keywords: &[S
 // Makes minimal assumptions - the label is simply the text before each number
 // A number is considered valid if it's not part of an alphanumeric identifier
 fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, keywords: &[String]) {
-    let mut label_start = 0;
+    let mut search_start = 0;  // Position to start searching for the next number
     let mut i = 0;
     let chars: Vec<char> = line.chars().collect();
     
@@ -210,8 +210,8 @@ fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, 
             
             // Validate it's a proper number
             if let Ok(_parsed_num) = num_str.parse::<f64>() {
-                // Extract the label (everything from label_start to num_start)
-                let label: String = chars[label_start..num_start].iter().collect();
+                // Extract the label (everything from search_start to num_start)
+                let label: String = chars[search_start..num_start].iter().collect();
                 
                 // Use the label as-is, or "value" if empty
                 let label = if label.is_empty() {
@@ -227,8 +227,8 @@ fn extract_numbers_from_line(line: &str, results: &mut HashMap<String, String>, 
                 }
             }
             
-            // Update label_start for the next number
-            label_start = num_end;
+            // Update search_start for the next number
+            search_start = num_end;
         } else {
             i += 1;
         }
