@@ -1,27 +1,27 @@
 use std::env;
 
-mod parser;
 mod evaluator;
 mod executor;
+mod parser;
 
-use parser::parse_args;
 use evaluator::evaluate_params;
 use executor::execute_experiments;
+use parser::parse_args;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    
+
     if args.is_empty() {
         print_usage();
         return;
     }
-    
+
     // Check for help flag
     if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
         print_usage();
         return;
     }
-    
+
     // Parse command line arguments
     let (params, command, options) = match parse_args(&args) {
         Ok(result) => result,
@@ -32,14 +32,14 @@ fn main() {
             std::process::exit(1);
         }
     };
-    
+
     if params.is_empty() {
         eprintln!("Error: No parameters specified");
         eprintln!();
         print_usage();
         std::process::exit(1);
     }
-    
+
     // Evaluate parameter combinations
     let combinations = match evaluate_params(&params) {
         Ok(combos) => combos,
@@ -48,9 +48,9 @@ fn main() {
             std::process::exit(1);
         }
     };
-    
+
     println!("Generated {} parameter combinations", combinations.len());
-    
+
     // Execute experiments
     if let Err(e) = execute_experiments(&combinations, &command, &options) {
         eprintln!("Error executing experiments: {}", e);
