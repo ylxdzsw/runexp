@@ -407,4 +407,109 @@ mod tests {
         assert_eq!(combos[0].params.get("MODE").unwrap(), "train");
         assert_eq!(combos[2].params.get("MODE").unwrap(), "1");
     }
+
+    #[test]
+    fn test_parameter_order_preserved() {
+        // Test that parameter order is preserved in param_order field
+        let params = vec![
+            ("GPU".to_string(), "1,2".to_string()),
+            ("BATCHSIZE".to_string(), "32,64".to_string()),
+            ("LR".to_string(), "0.01".to_string()),
+        ];
+        let combos = evaluate_params(&params).unwrap();
+        
+        // Check that param_order matches input order
+        assert_eq!(combos[0].param_order, vec!["GPU", "BATCHSIZE", "LR"]);
+    }
+
+    #[test]
+    fn test_forward_references() {
+        // Test that parameters can refer to variables defined later
+        let params = vec![
+            ("BATCHSIZE".to_string(), "32n".to_string()), // Refers to N, defined later
+            ("N".to_string(), "1,2".to_string()),
+            ("GPU".to_string(), "n".to_string()), // Also refers to N
+        ];
+        let combos = evaluate_params(&params).unwrap();
+        
+        assert_eq!(combos.len(), 2);
+        
+        // Check first combination
+        assert_eq!(combos[0].params.get("N").unwrap(), "1");
+        assert_eq!(combos[0].params.get("BATCHSIZE").unwrap(), "32");
+        assert_eq!(combos[0].params.get("GPU").unwrap(), "1");
+        
+        // Check second combination
+        assert_eq!(combos[1].params.get("N").unwrap(), "2");
+        assert_eq!(combos[1].params.get("BATCHSIZE").unwrap(), "64");
+        assert_eq!(combos[1].params.get("GPU").unwrap(), "2");
+        
+        // Check that param_order preserves input order, not dependency order
+        assert_eq!(combos[0].param_order, vec!["BATCHSIZE", "N", "GPU"]);
+    }
+
+    #[test]
+    fn test_circular_dependency_detection() {
+        // Test that circular dependencies are detected and reported
+        let params = vec![
+            ("A".to_string(), "b".to_string()), // A depends on B
+            ("B".to_string(), "a".to_string()), // B depends on A - circular!
+        ];
+        let result = evaluate_params(&params);
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Circular dependency"));
+    }
+
+    #[test]
+    fn test_loop_order() {
+        // Test that first parameter changes least frequently (outer loop)
+        let params = vec![
+            ("GPU".to_string(), "1,2".to_string()),
+            ("BATCHSIZE".to_string(), "32,64".to_string()),
+        ];
+        let combos = evaluate_params(&params).unwrap();
+        
+        assert_eq!(combos.len(), 4);
+        
+        // Expected order: GPU changes slowest (outer loop), BATCHSIZE changes fastest (inner loop)
+        // (1,32), (1,64), (2,32), (2,64)
+        assert_eq!(combos[0].params.get("GPU").unwrap(), "1");
+        assert_eq!(combos[0].params.get("BATCHSIZE").unwrap(), "32");
+        
+        assert_eq!(combos[1].params.get("GPU").unwrap(), "1");
+        assert_eq!(combos[1].params.get("BATCHSIZE").unwrap(), "64");
+        
+        assert_eq!(combos[2].params.get("GPU").unwrap(), "2");
+        assert_eq!(combos[2].params.get("BATCHSIZE").unwrap(), "32");
+        
+        assert_eq!(combos[3].params.get("GPU").unwrap(), "2");
+        assert_eq!(combos[3].params.get("BATCHSIZE").unwrap(), "64");
+    }
+
+    #[test]
+    fn test_complex_forward_dependency() {
+        // Test more complex dependency chains
+        let params = vec![
+            ("C".to_string(), "a+b".to_string()), // C depends on A and B
+            ("B".to_string(), "2a".to_string()),   // B depends on A
+            ("A".to_string(), "1,2".to_string()),  // A has no dependencies
+        ];
+        let combos = evaluate_params(&params).unwrap();
+        
+        assert_eq!(combos.len(), 2);
+        
+        // When A=1: B=2, C=1+2=3
+        assert_eq!(combos[0].params.get("A").unwrap(), "1");
+        assert_eq!(combos[0].params.get("B").unwrap(), "2");
+        assert_eq!(combos[0].params.get("C").unwrap(), "3");
+        
+        // When A=2: B=4, C=2+4=6
+        assert_eq!(combos[1].params.get("A").unwrap(), "2");
+        assert_eq!(combos[1].params.get("B").unwrap(), "4");
+        assert_eq!(combos[1].params.get("C").unwrap(), "6");
+        
+        // Param order should be preserved
+        assert_eq!(combos[0].param_order, vec!["C", "B", "A"]);
+    }
 }
