@@ -1,6 +1,6 @@
 use crate::evaluator::Combination;
 use crate::parser::Options;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -20,11 +20,9 @@ pub fn execute_experiments(
 ) -> Result<(), String> {
     let mut results = Vec::new();
 
-    // Get expected parameter names from combinations
+    // Get expected parameter names from combinations (in input order)
     let expected_params: Vec<String> = if let Some(first_combo) = combinations.first() {
-        let mut params: Vec<String> = first_combo.params.keys().cloned().collect();
-        params.sort();
-        params
+        first_combo.param_order.clone()
     } else {
         Vec::new()
     };
@@ -71,7 +69,7 @@ pub fn execute_experiments(
                 };
                 results.push(result);
                 // Store results immediately after each successful run
-                save_results(&results, &options.output_file, options)?;
+                save_results(&results, &expected_params, &options.output_file, options)?;
             }
             Err(e) => {
                 eprintln!("Failed to run combination: {}", e);
@@ -286,6 +284,7 @@ fn should_keep_label(label: &str, metrics: &[String]) -> bool {
 
 fn save_results(
     results: &[ExperimentResult],
+    param_names: &[String],
     filename: &str,
     options: &Options,
 ) -> Result<(), String> {
@@ -296,20 +295,9 @@ fn save_results(
         return Ok(());
     }
 
-    // Collect all unique parameter names
-    let mut param_names_set = HashSet::new();
-
-    for result in results {
-        for name in result.params.keys() {
-            param_names_set.insert(name.clone());
-        }
-    }
-
-    let mut param_names: Vec<String> = param_names_set.into_iter().collect();
-    param_names.sort();
-
+    // Use the provided param_names order instead of sorting
     // Build header: params, then metric columns (if any), then stdout and/or stderr
-    let mut headers = param_names.clone();
+    let mut headers = param_names.to_vec();
 
     // Only add metric columns if metrics are specified
     let metric_columns: Vec<String> = options.metrics.clone();
@@ -341,7 +329,7 @@ fn save_results(
         let mut values: Vec<String> = Vec::new();
 
         // Add parameter values
-        for name in &param_names {
+        for name in param_names {
             let val = result.params.get(name).map(|s| s.as_str()).unwrap_or("");
             values.push(escape_csv_field(val));
         }

@@ -1,15 +1,29 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct Combination {
     pub params: HashMap<String, String>,
+    pub param_order: Vec<String>, // Preserve the order of parameters
 }
 
 pub fn evaluate_params(params: &[(String, String)]) -> Result<Vec<Combination>, String> {
-    // Build combinations incrementally, evaluating each parameter in context
+    // Topologically sort parameters based on dependencies
+    let sorted_params = topological_sort(params)?;
+    
+    // Store the original order for output
+    let param_order: Vec<String> = params.iter().map(|(name, _)| name.clone()).collect();
+    
+    // Build combinations incrementally, evaluating each parameter in dependency order
     let mut combinations: Vec<HashMap<String, String>> = vec![HashMap::new()];
 
-    for (name, value) in params {
+    for name in &sorted_params {
+        // Find the value expression for this parameter
+        let value = params
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v)
+            .ok_or_else(|| format!("Parameter {} not found", name))?;
+        
         let mut new_combinations = Vec::new();
 
         for combo in &combinations {
@@ -34,8 +48,126 @@ pub fn evaluate_params(params: &[(String, String)]) -> Result<Vec<Combination>, 
 
     Ok(combinations
         .into_iter()
-        .map(|params| Combination { params })
+        .map(|params| Combination { params, param_order: param_order.clone() })
         .collect())
+}
+
+// Topologically sort parameters based on their dependencies
+fn topological_sort(params: &[(String, String)]) -> Result<Vec<String>, String> {
+    // Build dependency graph
+    let mut deps: HashMap<String, HashSet<String>> = HashMap::new();
+    let param_names: HashSet<String> = params.iter().map(|(name, _)| name.clone()).collect();
+    
+    for (name, value) in params {
+        let dependencies = extract_variables(value);
+        // Only include dependencies that are actually parameters
+        let filtered_deps: HashSet<String> = dependencies
+            .into_iter()
+            .filter(|dep| param_names.contains(dep))
+            .collect();
+        deps.insert(name.clone(), filtered_deps);
+    }
+    
+    // Perform topological sort using Kahn's algorithm
+    let mut in_degree: HashMap<String, usize> = HashMap::new();
+    for name in &param_names {
+        in_degree.insert(name.clone(), 0);
+    }
+    
+    // Calculate in-degrees: for each parameter, its in-degree is the number of parameters it depends on
+    for (name, dependencies) in &deps {
+        *in_degree.get_mut(name).unwrap() = dependencies.len();
+    }
+    
+    let mut queue: Vec<String> = in_degree
+        .iter()
+        .filter(|(_, degree)| **degree == 0)
+        .map(|(name, _)| name.clone())
+        .collect();
+    
+    // Sort the initial queue by the original parameter order to maintain stability
+    let param_positions: HashMap<String, usize> = params
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| (name.clone(), i))
+        .collect();
+    queue.sort_by_key(|name| param_positions.get(name).unwrap_or(&usize::MAX));
+    
+    let mut result = Vec::new();
+    
+    while !queue.is_empty() {
+        let node = queue.remove(0); // Take from front to maintain order
+        result.push(node.clone());
+        
+        // Find all parameters that depend on this node
+        for (name, dependencies) in &deps {
+            if dependencies.contains(&node) {
+                let degree = in_degree.get_mut(name).unwrap();
+                *degree -= 1;
+                if *degree == 0 {
+                    queue.push(name.clone());
+                }
+            }
+        }
+        
+        // Keep queue sorted by original order
+        queue.sort_by_key(|name| param_positions.get(name).unwrap_or(&usize::MAX));
+    }
+    
+    if result.len() != param_names.len() {
+        // Circular dependency detected
+        return Err("Circular dependency detected in parameter definitions".to_string());
+    }
+    
+    Ok(result)
+}
+
+// Extract variable names from an expression
+fn extract_variables(expr: &str) -> HashSet<String> {
+    let mut variables = HashSet::new();
+    
+    // Split by comma first
+    for part in expr.split(',') {
+        let part = part.trim();
+        
+        // Skip ranges (contain ':')
+        if part.contains(':') {
+            // Still need to check for variables in range bounds
+            for range_part in part.split(':') {
+                extract_variables_from_term(range_part.trim(), &mut variables);
+            }
+            continue;
+        }
+        
+        extract_variables_from_term(part, &mut variables);
+    }
+    
+    variables
+}
+
+// Extract variables from a single term (no commas)
+fn extract_variables_from_term(term: &str, variables: &mut HashSet<String>) {
+    // Parse through the expression looking for variable names
+    // Variables are alphabetic identifiers that aren't just numbers
+    
+    // Split by operators but keep track of tokens
+    let mut current_token = String::new();
+    
+    for ch in term.chars() {
+        if ch.is_alphabetic() || ch == '_' {
+            current_token.push(ch);
+        } else {
+            if !current_token.is_empty() {
+                // Normalize to uppercase for consistency
+                variables.insert(current_token.to_uppercase());
+                current_token.clear();
+            }
+        }
+    }
+    
+    if !current_token.is_empty() {
+        variables.insert(current_token.to_uppercase());
+    }
 }
 
 fn evaluate_expression(
