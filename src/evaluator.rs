@@ -9,10 +9,10 @@ pub struct Combination {
 pub fn evaluate_params(params: &[(String, String)]) -> Result<Vec<Combination>, String> {
     // Topologically sort parameters based on dependencies
     let sorted_params = topological_sort(params)?;
-    
+
     // Store the original order for output
     let param_order: Vec<String> = params.iter().map(|(name, _)| name.clone()).collect();
-    
+
     // Build combinations incrementally, evaluating each parameter in dependency order
     let mut combinations: Vec<HashMap<String, String>> = vec![HashMap::new()];
 
@@ -23,7 +23,7 @@ pub fn evaluate_params(params: &[(String, String)]) -> Result<Vec<Combination>, 
             .find(|(n, _)| n == name)
             .map(|(_, v)| v)
             .ok_or_else(|| format!("Parameter {} not found", name))?;
-        
+
         let mut new_combinations = Vec::new();
 
         for combo in &combinations {
@@ -48,7 +48,10 @@ pub fn evaluate_params(params: &[(String, String)]) -> Result<Vec<Combination>, 
 
     Ok(combinations
         .into_iter()
-        .map(|params| Combination { params, param_order: param_order.clone() })
+        .map(|params| Combination {
+            params,
+            param_order: param_order.clone(),
+        })
         .collect())
 }
 
@@ -57,7 +60,7 @@ fn topological_sort(params: &[(String, String)]) -> Result<Vec<String>, String> 
     // Build dependency graph
     let mut deps: HashMap<String, HashSet<String>> = HashMap::new();
     let param_names: HashSet<String> = params.iter().map(|(name, _)| name.clone()).collect();
-    
+
     for (name, value) in params {
         let dependencies = extract_variables(value);
         // Only include dependencies that are actually parameters
@@ -67,24 +70,24 @@ fn topological_sort(params: &[(String, String)]) -> Result<Vec<String>, String> 
             .collect();
         deps.insert(name.clone(), filtered_deps);
     }
-    
+
     // Perform topological sort using Kahn's algorithm
     let mut in_degree: HashMap<String, usize> = HashMap::new();
     for name in &param_names {
         in_degree.insert(name.clone(), 0);
     }
-    
+
     // Calculate in-degrees: for each parameter, its in-degree is the number of parameters it depends on
     for (name, dependencies) in &deps {
         *in_degree.get_mut(name).unwrap() = dependencies.len();
     }
-    
+
     let mut queue: Vec<String> = in_degree
         .iter()
         .filter(|(_, degree)| **degree == 0)
         .map(|(name, _)| name.clone())
         .collect();
-    
+
     // Sort the initial queue by the original parameter order to maintain stability
     let param_positions: HashMap<String, usize> = params
         .iter()
@@ -92,13 +95,13 @@ fn topological_sort(params: &[(String, String)]) -> Result<Vec<String>, String> 
         .map(|(i, (name, _))| (name.clone(), i))
         .collect();
     queue.sort_by_key(|name| param_positions.get(name).unwrap_or(&usize::MAX));
-    
+
     let mut result = Vec::new();
-    
+
     while !queue.is_empty() {
         let node = queue.remove(0); // Take from front to maintain order
         result.push(node.clone());
-        
+
         // Find all parameters that depend on this node
         for (name, dependencies) in &deps {
             if dependencies.contains(&node) {
@@ -109,27 +112,27 @@ fn topological_sort(params: &[(String, String)]) -> Result<Vec<String>, String> 
                 }
             }
         }
-        
+
         // Keep queue sorted by original order
         queue.sort_by_key(|name| param_positions.get(name).unwrap_or(&usize::MAX));
     }
-    
+
     if result.len() != param_names.len() {
         // Circular dependency detected
         return Err("Circular dependency detected in parameter definitions".to_string());
     }
-    
+
     Ok(result)
 }
 
 // Extract variable names from an expression
 fn extract_variables(expr: &str) -> HashSet<String> {
     let mut variables = HashSet::new();
-    
+
     // Split by comma first
     for part in expr.split(',') {
         let part = part.trim();
-        
+
         // Skip ranges (contain ':')
         if part.contains(':') {
             // Still need to check for variables in range bounds
@@ -138,10 +141,10 @@ fn extract_variables(expr: &str) -> HashSet<String> {
             }
             continue;
         }
-        
+
         extract_variables_from_term(part, &mut variables);
     }
-    
+
     variables
 }
 
@@ -149,22 +152,20 @@ fn extract_variables(expr: &str) -> HashSet<String> {
 fn extract_variables_from_term(term: &str, variables: &mut HashSet<String>) {
     // Parse through the expression looking for variable names
     // Variables are alphabetic identifiers that aren't just numbers
-    
+
     // Split by operators but keep track of tokens
     let mut current_token = String::new();
-    
+
     for ch in term.chars() {
         if ch.is_alphabetic() || ch == '_' {
             current_token.push(ch);
-        } else {
-            if !current_token.is_empty() {
-                // Normalize to uppercase for consistency
-                variables.insert(current_token.to_uppercase());
-                current_token.clear();
-            }
+        } else if !current_token.is_empty() {
+            // Normalize to uppercase for consistency
+            variables.insert(current_token.to_uppercase());
+            current_token.clear();
         }
     }
-    
+
     if !current_token.is_empty() {
         variables.insert(current_token.to_uppercase());
     }
@@ -417,7 +418,7 @@ mod tests {
             ("LR".to_string(), "0.01".to_string()),
         ];
         let combos = evaluate_params(&params).unwrap();
-        
+
         // Check that param_order matches input order
         assert_eq!(combos[0].param_order, vec!["GPU", "BATCHSIZE", "LR"]);
     }
@@ -431,19 +432,19 @@ mod tests {
             ("GPU".to_string(), "n".to_string()), // Also refers to N
         ];
         let combos = evaluate_params(&params).unwrap();
-        
+
         assert_eq!(combos.len(), 2);
-        
+
         // Check first combination
         assert_eq!(combos[0].params.get("N").unwrap(), "1");
         assert_eq!(combos[0].params.get("BATCHSIZE").unwrap(), "32");
         assert_eq!(combos[0].params.get("GPU").unwrap(), "1");
-        
+
         // Check second combination
         assert_eq!(combos[1].params.get("N").unwrap(), "2");
         assert_eq!(combos[1].params.get("BATCHSIZE").unwrap(), "64");
         assert_eq!(combos[1].params.get("GPU").unwrap(), "2");
-        
+
         // Check that param_order preserves input order, not dependency order
         assert_eq!(combos[0].param_order, vec!["BATCHSIZE", "N", "GPU"]);
     }
@@ -456,7 +457,7 @@ mod tests {
             ("B".to_string(), "a".to_string()), // B depends on A - circular!
         ];
         let result = evaluate_params(&params);
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Circular dependency"));
     }
@@ -469,20 +470,20 @@ mod tests {
             ("BATCHSIZE".to_string(), "32,64".to_string()),
         ];
         let combos = evaluate_params(&params).unwrap();
-        
+
         assert_eq!(combos.len(), 4);
-        
+
         // Expected order: GPU changes slowest (outer loop), BATCHSIZE changes fastest (inner loop)
         // (1,32), (1,64), (2,32), (2,64)
         assert_eq!(combos[0].params.get("GPU").unwrap(), "1");
         assert_eq!(combos[0].params.get("BATCHSIZE").unwrap(), "32");
-        
+
         assert_eq!(combos[1].params.get("GPU").unwrap(), "1");
         assert_eq!(combos[1].params.get("BATCHSIZE").unwrap(), "64");
-        
+
         assert_eq!(combos[2].params.get("GPU").unwrap(), "2");
         assert_eq!(combos[2].params.get("BATCHSIZE").unwrap(), "32");
-        
+
         assert_eq!(combos[3].params.get("GPU").unwrap(), "2");
         assert_eq!(combos[3].params.get("BATCHSIZE").unwrap(), "64");
     }
@@ -492,23 +493,23 @@ mod tests {
         // Test more complex dependency chains
         let params = vec![
             ("C".to_string(), "a+b".to_string()), // C depends on A and B
-            ("B".to_string(), "2a".to_string()),   // B depends on A
-            ("A".to_string(), "1,2".to_string()),  // A has no dependencies
+            ("B".to_string(), "2a".to_string()),  // B depends on A
+            ("A".to_string(), "1,2".to_string()), // A has no dependencies
         ];
         let combos = evaluate_params(&params).unwrap();
-        
+
         assert_eq!(combos.len(), 2);
-        
+
         // When A=1: B=2, C=1+2=3
         assert_eq!(combos[0].params.get("A").unwrap(), "1");
         assert_eq!(combos[0].params.get("B").unwrap(), "2");
         assert_eq!(combos[0].params.get("C").unwrap(), "3");
-        
+
         // When A=2: B=4, C=2+4=6
         assert_eq!(combos[1].params.get("A").unwrap(), "2");
         assert_eq!(combos[1].params.get("B").unwrap(), "4");
         assert_eq!(combos[1].params.get("C").unwrap(), "6");
-        
+
         // Param order should be preserved
         assert_eq!(combos[0].param_order, vec!["C", "B", "A"]);
     }

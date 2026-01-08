@@ -1,167 +1,81 @@
 # Runexp
 
-> **Note**: This project is AI-generated (vibed) and the code has not been reviewed by the author.
+A command-line tool for running experiments with different parameter combinations.
 
-`runexp` is a command-line tool for running scripts with different parameters and collecting results, designed for running experiments in research projects.
+## Features
 
-## Motivation / Features
-
-- **No installation**: `runexp` is a statically-linked, single-file, dependency-free binary. Just download with wget, chmod, then run. No Python required.
-- **No integration**: Read environment variables, write to stdout/stderr—that's it. All languages are supported. Experiment scripts are regular scripts that can run without `runexp`. No need to import anything.
-- **Text-in, text-out**: All related files are plain text that work seamlessly with `sed`, `awk`, `grep`, `vim`, `vscode™`, `Excel™`. Who wants MySQL for 10KB of experiment data?
+- **Zero dependencies**: Single binary, no installation required
+- **Language agnostic**: Works via environment variables - supports any language
+- **Plain text output**: Results saved as CSV for easy processing
 
 ## Quick Start
 
-### Example 1
-
-Suppose our experiment script is as follows:
-
-```python
-import os
-ngpu = int(os.environ["GPU"])  # Parameter names are converted to uppercase
-batchsize = int(os.environ["BATCHSIZE"])  # Dashes and underscores become underscores
-
-import random
-accuracy = random.random()
-time = batchsize / ngpu + random.random() 
-
-print("accuracy: ", accuracy)
-print("time: ", time)
-```
-
-To run the experiment with different *combinations* of gpus and batch_size, use
-
 ```bash
-runexp --gpu 1,2,4 --batchsize 32,64 python exp.py --options passed to script
-```
+# Run all combinations of parameters
+runexp --gpu 1,2,4 --batchsize 32,64 python exp.py
 
-This will run the following commands one by one:
-
-```bash
-GPU=1 BATCHSIZE=32 python exp.py --options passed to script
-GPU=1 BATCHSIZE=64 python exp.py --options passed to script
-GPU=2 BATCHSIZE=32 python exp.py --options passed to script
-GPU=2 BATCHSIZE=64 python exp.py --options passed to script
-GPU=4 BATCHSIZE=32 python exp.py --options passed to script
-GPU=4 BATCHSIZE=64 python exp.py --options passed to script
-```
-
-To run the experiment with different *pairs* of gpus and batch_size, use
-
-```bash
+# Use expressions (dependent parameters)
 runexp --n 1,2,4 --gpu n --batchsize 32n python exp.py
-```
 
-This runs
-
-```
-N=1 GPU=1 BATCHSIZE=32 python exp.py
-N=2 GPU=2 BATCHSIZE=64 python exp.py
-N=4 GPU=4 BATCHSIZE=128 python exp.py
-```
-
-As illustrated above, a parameter can refer to parameters defined anywhere in the parameter list, and simple calculations are supported. Parameters that have multiple values (expressed using `,`) instruct `runexp` to run all combinations of the values.
-
-**Note**: Parameters are evaluated in dependency order (using topological sort), so you can reference parameters defined later, as long as there are no circular dependencies. However, the output CSV columns and experiment loop order always follow the input order.
-
-### Example 2
-
-When the experiment command is long or programs don't directly read environment variables, use a heredoc:
-
-```bash
-runexp --gpu 1,2,4 --batchsize 32gpu <<"EOF"
-python tune.py --gpu $GPU --batchsize $BATCHSIZE
-for ((i=0;i<$GPU;i++)); do
-    CUDA_VISIBLE_DEVICES=$i python train.py --batchsize $BATCHSIZE &
-done
-wait
-python report_result.py
+# Use heredoc for complex commands
+runexp --gpu 1,2 --batchsize 32,64 <<"EOF"
+python train.py --gpu $GPU --batchsize $BATCHSIZE
+python evaluate.py
 EOF
 ```
 
-Note: Quote `EOF` in the heredoc to prevent shell from expanding variables too early.
+Your script reads parameters from environment variables (converted to uppercase):
 
-## Reference
-
-### Parameter Naming Convention
-
-Parameter names are converted to environment variable names:
-1. All letters are converted to **uppercase**
-2. Both **dashes (`-`)** and **underscores (`_`)** are converted to **underscores (`_`)**
-
-Examples: `--batch-size` → `BATCH_SIZE`, `--learning_rate` → `LEARNING_RATE`, `--gpu` → `GPU`
-
-### Parameter Expressions
-
-Parameters can reference other parameters anywhere in the parameter list (forward or backward references are allowed). `runexp` automatically determines the correct evaluation order using topological sort. Circular dependencies are detected and reported as errors.
-
-Currently supported expressions include:
-
-- **Variables**: Reference any other parameter (e.g., `n`, `gpu`)
-- Literal numbers
-- Addition: `2+n`
-- Multiplication: `2n`, `n*n` (be aware of bash substitution when using `*`)
-- Exponentiation: `n^2`
-- Comma-separated list: `1,2,4,n,2n+1,4n^3`
-- Integer ranges: `1:4` means `1,2,3` (start:end, end exclusive)
-- Integer ranges with step: `1:10:2` means `1,3,5,7,9` (start:end:step)
-- Literal strings that do not contain any of the above symbols (`+`, `*`, `^`, `,`, `:`)
-
-Example with forward reference:
-```bash
-runexp --batchsize 32n --n 1,2,4 --gpu n python exp.py
+```python
+import os
+gpu = int(os.environ["GPU"])
+batchsize = int(os.environ["BATCHSIZE"])
+# ... run experiment, print results to stdout
 ```
 
-This runs with N=1,2,4 and BATCHSIZE=32, 64, 128 respectively (even though `--batchsize` is defined before `--n`).
+## Parameter Syntax
 
-`runexp` does not intend to embed a scripting language. These expressions should fit most use cases.
+**Naming**: Parameters are converted to uppercase environment variables. Dashes and underscores both become underscores.
+- `--batch-size` → `BATCH_SIZE`
+- `--gpu` → `GPU`
 
-### Output Parsing
+**Values** support:
+- **Lists**: `1,2,4` (creates combinations)
+- **Ranges**: `1:4` = `1,2,3`, `1:10:2` = `1,3,5,7,9`
+- **Expressions**: Reference other parameters with `+`, `*`, `^`
+  - `32n` (multiplication)
+  - `n+1` (addition)
+  - `n^2` (exponentiation)
 
-`runexp` collects stdout and stderr (both by default, or only one with `--stdout` or `--stderr`). The output is split by line breaks and numbers. The text before a number is considered its label. If a label appears multiple times, the last value is kept.
+Parameters can reference each other in any order (forward/backward). Circular dependencies are detected.
 
-The `--metrics metric1,metric2` option filters results - only numbers whose labels contain any metric are kept, and only those metrics become columns in the output CSV. Metrics can contain spaces (e.g., `--metrics "training time,test-accuracy"`). **Important**: If any specified metric is not found, the experiment is treated as failed.
+## Output
 
-### Output Format
+**Parsing**: `runexp` extracts numbers from stdout/stderr. Text before a number becomes its label. Use `--metrics` to filter specific metrics.
 
-Results are saved to a CSV file (default: `results.csv`, or specify with `--output FILE`). Columns are:
+**Format**: Results saved to `results.csv` (or use `--output FILE`):
+- Parameter columns (in input order)
+- Metric columns (if `--metrics` specified)
+- stdout/stderr columns
 
-1. Parameter values (in the same order as specified on command line)
-2. Metric columns (only if `--metrics` is specified)
-3. Complete stdout (unless `--stderr` only)
-4. Complete stderr (unless `--stdout` only)
+**Resuming**: Failed experiments are skipped and can be resumed by re-running the same command.
 
-**Important**: 
-- Parameter columns follow the input order, NOT alphabetical order
-- Experiments are executed in an order where the first parameter changes least frequently (outer loop) and the last parameter changes most frequently (inner loop)
-- If no metrics are specified, the output only contains parameter values and stdout/stderr
+## Options
 
-Example:
-```bash
-runexp --gpu 1,2 --batchsize 32,64 python exp.py
 ```
-Creates CSV with columns: `GPU,BATCHSIZE,stdout,stderr` and rows in order:
-- GPU=1, BATCHSIZE=32
-- GPU=1, BATCHSIZE=64
-- GPU=2, BATCHSIZE=32
-- GPU=2, BATCHSIZE=64
-
-### Dealing with Failures and Resuming
-
-Failed experiments are not included in results, but their stdout/stderr are printed for debugging.
-
-`runexp` automatically skips completed experiments. Re-running the same command resumes from where it left off.
-
-**Important**: When resuming, `runexp` validates that the existing result file is compatible with the current arguments. If the parameter names or metrics don't match, `runexp` will error out to prevent accidental data corruption. Use a different output file name or remove the existing file to start fresh.
+--stdout               Parse only stdout
+--stderr               Parse only stderr  
+--metrics m1,m2        Filter and validate specific metrics
+--output FILE          Output file (default: results.csv)
+-h, --help            Show help
+```
 
 ## Examples
 
-The `examples/` directory contains:
-
-- `test_experiment.py` - A simple Python script that reads parameters and outputs results
-- `run_tests.sh` - A comprehensive test script showing all runexp features
+See the `examples/` directory:
+- `test_experiment.py` - Sample experiment script
+- `run_tests.sh` - Comprehensive test showing all features
 
 ```bash
-bash examples/run_tests.sh
 ./target/release/runexp --gpu 1,2 --batchsize 32,64 python3 examples/test_experiment.py
 ```
