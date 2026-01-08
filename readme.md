@@ -60,7 +60,9 @@ N=2 GPU=2 BATCHSIZE=64 python exp.py
 N=4 GPU=4 BATCHSIZE=128 python exp.py
 ```
 
-As illustrated above, a parameter can refer to parameters defined earlier, and simple calculations are supported. Parameters that have multiple values (expressed using `,`) instruct `runexp` to run all combinations of the values.
+As illustrated above, a parameter can refer to parameters defined anywhere in the parameter list, and simple calculations are supported. Parameters that have multiple values (expressed using `,`) instruct `runexp` to run all combinations of the values.
+
+**Note**: Parameters are evaluated in dependency order (using topological sort), so you can reference parameters defined later, as long as there are no circular dependencies. However, the output CSV columns and experiment loop order always follow the input order.
 
 ### Example 2
 
@@ -91,9 +93,11 @@ Examples: `--batch-size` → `BATCH_SIZE`, `--learning_rate` → `LEARNING_RATE`
 
 ### Parameter Expressions
 
+Parameters can reference other parameters anywhere in the parameter list (forward or backward references are allowed). `runexp` automatically determines the correct evaluation order using topological sort. Circular dependencies are detected and reported as errors.
+
 Currently supported expressions include:
 
-- Variables defined earlier
+- **Variables**: Reference any other parameter (e.g., `n`, `gpu`)
 - Literal numbers
 - Addition: `2+n`
 - Multiplication: `2n`, `n*n` (be aware of bash substitution when using `*`)
@@ -102,6 +106,13 @@ Currently supported expressions include:
 - Integer ranges: `1:4` means `1,2,3` (start:end, end exclusive)
 - Integer ranges with step: `1:10:2` means `1,3,5,7,9` (start:end:step)
 - Literal strings that do not contain any of the above symbols (`+`, `*`, `^`, `,`, `:`)
+
+Example with forward reference:
+```bash
+runexp --batchsize 32n --n 1,2,4 --gpu n python exp.py
+```
+
+This runs with N=1,2,4 and BATCHSIZE=32, 64, 128 respectively (even though `--batchsize` is defined before `--n`).
 
 `runexp` does not intend to embed a scripting language. These expressions should fit most use cases.
 
@@ -115,12 +126,25 @@ The `--metrics metric1,metric2` option filters results - only numbers whose labe
 
 Results are saved to a CSV file (default: `results.csv`, or specify with `--output FILE`). Columns are:
 
-1. Parameter values (sorted alphabetically)
+1. Parameter values (in the same order as specified on command line)
 2. Metric columns (only if `--metrics` is specified)
 3. Complete stdout (unless `--stderr` only)
 4. Complete stderr (unless `--stdout` only)
 
-Note: If no metrics are specified, the output only contains parameter values and stdout/stderr.
+**Important**: 
+- Parameter columns follow the input order, NOT alphabetical order
+- Experiments are executed in an order where the first parameter changes least frequently (outer loop) and the last parameter changes most frequently (inner loop)
+- If no metrics are specified, the output only contains parameter values and stdout/stderr
+
+Example:
+```bash
+runexp --gpu 1,2 --batchsize 32,64 python exp.py
+```
+Creates CSV with columns: `GPU,BATCHSIZE,stdout,stderr` and rows in order:
+- GPU=1, BATCHSIZE=32
+- GPU=1, BATCHSIZE=64
+- GPU=2, BATCHSIZE=32
+- GPU=2, BATCHSIZE=64
 
 ### Dealing with Failures and Resuming
 
