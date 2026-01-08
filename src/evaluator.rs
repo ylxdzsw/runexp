@@ -8,40 +8,47 @@ pub struct Combination {
 pub fn evaluate_params(params: &[(String, String)]) -> Result<Vec<Combination>, String> {
     // Build combinations incrementally, evaluating each parameter in context
     let mut combinations: Vec<HashMap<String, String>> = vec![HashMap::new()];
-    
+
     for (name, value) in params {
         let mut new_combinations = Vec::new();
-        
+
         for combo in &combinations {
             // Normalize context keys to uppercase for case-insensitive lookup
-            let normalized_context: HashMap<String, String> = combo.iter()
+            let normalized_context: HashMap<String, String> = combo
+                .iter()
                 .map(|(k, v)| (k.to_uppercase(), v.clone()))
                 .collect();
-            
+
             // Evaluate the expression in the context of this combination
             let values = evaluate_expression(value, &normalized_context)?;
-            
+
             for val in values {
                 let mut new_combo = combo.clone();
                 new_combo.insert(name.clone(), val);
                 new_combinations.push(new_combo);
             }
         }
-        
+
         combinations = new_combinations;
     }
-    
-    Ok(combinations.into_iter().map(|params| Combination { params }).collect())
+
+    Ok(combinations
+        .into_iter()
+        .map(|params| Combination { params })
+        .collect())
 }
 
-fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<Vec<String>, String> {
+fn evaluate_expression(
+    expr: &str,
+    context: &HashMap<String, String>,
+) -> Result<Vec<String>, String> {
     // Split by comma for multiple values
     let parts: Vec<&str> = expr.split(',').collect();
     let mut results = Vec::new();
-    
+
     for part in parts {
         let part = part.trim();
-        
+
         // Check for range (e.g., "1:4" or "1:10:2")
         if part.contains(':') {
             let range_parts: Vec<&str> = part.split(':').collect();
@@ -49,7 +56,10 @@ fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<
                 let start = parse_int_expr(range_parts[0].trim(), context)?;
                 let end = parse_int_expr(range_parts[1].trim(), context)?;
                 if start >= end {
-                    return Err(format!("Empty range {}:{} (start must be less than end)", start, end));
+                    return Err(format!(
+                        "Empty range {}:{} (start must be less than end)",
+                        start, end
+                    ));
                 }
                 for i in start..end {
                     results.push(i.to_string());
@@ -59,15 +69,15 @@ fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<
                 let start = parse_int_expr(range_parts[0].trim(), context)?;
                 let end = parse_int_expr(range_parts[1].trim(), context)?;
                 let step = parse_int_expr(range_parts[2].trim(), context)?;
-                
+
                 if step == 0 {
                     return Err("Range step cannot be zero".to_string());
                 }
-                
+
                 if (step > 0 && start >= end) || (step < 0 && start <= end) {
                     return Err(format!("Invalid range {}:{}:{}", start, end, step));
                 }
-                
+
                 let mut i = start;
                 while (step > 0 && i < end) || (step < 0 && i > end) {
                     results.push(i.to_string());
@@ -76,7 +86,7 @@ fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<
                 continue;
             }
         }
-        
+
         // Try to parse as expression
         match parse_expr(part, context) {
             Ok(val) => results.push(val),
@@ -86,13 +96,13 @@ fn evaluate_expression(expr: &str, context: &HashMap<String, String>) -> Result<
             }
         }
     }
-    
+
     Ok(results)
 }
 
 fn parse_expr(expr: &str, context: &HashMap<String, String>) -> Result<String, String> {
     let expr = expr.trim();
-    
+
     // Try to parse as integer expression first
     match parse_int_expr(expr, context) {
         Ok(val) => Ok(val.to_string()),
@@ -105,7 +115,7 @@ fn parse_expr(expr: &str, context: &HashMap<String, String>) -> Result<String, S
 
 fn parse_int_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
     let expr = expr.trim();
-    
+
     // Handle addition (lowest precedence)
     if expr.contains('+') {
         let parts: Vec<&str> = expr.split('+').collect();
@@ -115,13 +125,13 @@ fn parse_int_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, 
         }
         return Ok(sum);
     }
-    
+
     parse_mult_expr(expr, context)
 }
 
 fn parse_mult_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
     let expr = expr.trim();
-    
+
     // Handle multiplication with explicit *
     if expr.contains('*') {
         let parts: Vec<&str> = expr.split('*').collect();
@@ -131,13 +141,13 @@ fn parse_mult_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64,
         }
         return Ok(product);
     }
-    
+
     parse_exp_expr(expr, context)
 }
 
 fn parse_exp_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
     let expr = expr.trim();
-    
+
     // Handle exponentiation (highest precedence for binary operators)
     if expr.contains('^') {
         let parts: Vec<&str> = expr.split('^').collect();
@@ -147,13 +157,13 @@ fn parse_exp_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, 
             return Ok(base.pow(exp as u32));
         }
     }
-    
+
     parse_atom_expr(expr, context)
 }
 
 fn parse_atom_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64, String> {
     let expr = expr.trim();
-    
+
     // Handle implicit multiplication (e.g., "2n", "32gpu")
     // Try to find where number ends and variable begins
     let mut num_end = 0;
@@ -163,7 +173,7 @@ fn parse_atom_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64,
             break;
         }
     }
-    
+
     if num_end > 0 && num_end < expr.len() {
         let num_part = &expr[..num_end];
         let var_part = &expr[num_end..];
@@ -171,21 +181,24 @@ fn parse_atom_expr(expr: &str, context: &HashMap<String, String>) -> Result<i64,
         let var_val = parse_atom_expr(var_part, context)?;
         return Ok(num * var_val);
     }
-    
+
     // Check if it's a variable (context keys are already normalized to uppercase)
     let upper_expr = expr.to_uppercase();
     if let Some(value) = context.get(&upper_expr) {
-        return value.parse::<i64>().map_err(|_| format!("Variable {} is not a number", expr));
+        return value
+            .parse::<i64>()
+            .map_err(|_| format!("Variable {} is not a number", expr));
     }
-    
+
     // Try to parse as literal number
-    expr.parse::<i64>().map_err(|_| format!("Cannot parse as number: {}", expr))
+    expr.parse::<i64>()
+        .map_err(|_| format!("Cannot parse as number: {}", expr))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_combinations() {
         let params = vec![
@@ -195,7 +208,7 @@ mod tests {
         let combos = evaluate_params(&params).unwrap();
         assert_eq!(combos.len(), 6); // 3 * 2
     }
-    
+
     #[test]
     fn test_ranges() {
         // Basic range
@@ -203,20 +216,20 @@ mod tests {
         assert_eq!(combos.len(), 3);
         assert_eq!(combos[0].params.get("N").unwrap(), "1");
         assert_eq!(combos[2].params.get("N").unwrap(), "3");
-        
+
         // Positive step
         let combos = evaluate_params(&[("N".to_string(), "1:10:2".to_string())]).unwrap();
         assert_eq!(combos.len(), 5);
         assert_eq!(combos[0].params.get("N").unwrap(), "1");
         assert_eq!(combos[4].params.get("N").unwrap(), "9");
-        
+
         // Negative step
         let combos = evaluate_params(&[("N".to_string(), "10:1:-2".to_string())]).unwrap();
         assert_eq!(combos.len(), 5);
         assert_eq!(combos[0].params.get("N").unwrap(), "10");
         assert_eq!(combos[4].params.get("N").unwrap(), "2");
     }
-    
+
     #[test]
     fn test_expressions() {
         // Variable reference and implicit multiplication
@@ -229,35 +242,35 @@ mod tests {
         assert_eq!(combos.len(), 2);
         assert_eq!(combos[0].params.get("BATCHSIZE").unwrap(), "32");
         assert_eq!(combos[1].params.get("BATCHSIZE").unwrap(), "64");
-        
+
         // Operator precedence: n+3*2 = 2+6 = 8
         let combos = evaluate_params(&[
             ("N".to_string(), "2".to_string()),
             ("VALUE".to_string(), "n+3*2".to_string()),
-        ]).unwrap();
+        ])
+        .unwrap();
         assert_eq!(combos[0].params.get("VALUE").unwrap(), "8");
-        
+
         // Operator precedence: n+n^2 = 2+4 = 6
         let combos = evaluate_params(&[
             ("N".to_string(), "2".to_string()),
             ("VALUE".to_string(), "n+n^2".to_string()),
-        ]).unwrap();
+        ])
+        .unwrap();
         assert_eq!(combos[0].params.get("VALUE").unwrap(), "6");
     }
-    
+
     #[test]
     fn test_literal_strings() {
         // Pure literals
-        let combos = evaluate_params(&[
-            ("ROUTING".to_string(), "source,dest,both".to_string()),
-        ]).unwrap();
+        let combos =
+            evaluate_params(&[("ROUTING".to_string(), "source,dest,both".to_string())]).unwrap();
         assert_eq!(combos.len(), 3);
         assert_eq!(combos[0].params.get("ROUTING").unwrap(), "source");
-        
+
         // Mixed literals and numbers
-        let combos = evaluate_params(&[
-            ("MODE".to_string(), "train,test,1,2".to_string()),
-        ]).unwrap();
+        let combos =
+            evaluate_params(&[("MODE".to_string(), "train,test,1,2".to_string())]).unwrap();
         assert_eq!(combos.len(), 4);
         assert_eq!(combos[0].params.get("MODE").unwrap(), "train");
         assert_eq!(combos[2].params.get("MODE").unwrap(), "1");
