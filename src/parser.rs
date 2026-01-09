@@ -6,6 +6,7 @@ pub struct Options {
     pub stderr_only: bool,
     pub metrics: Vec<String>,
     pub output_file: String,
+    pub preserve_output: bool,
 }
 
 impl Default for Options {
@@ -15,6 +16,7 @@ impl Default for Options {
             stderr_only: false,
             metrics: Vec::new(),
             output_file: "results.csv".to_string(),
+            preserve_output: false,
         }
     }
 }
@@ -48,6 +50,9 @@ pub fn parse_args(args: &[String]) -> ParseResult {
                 return Err("--output requires an argument".to_string());
             }
             options.output_file = args[i].clone();
+            i += 1;
+        } else if arg == "--preserve-output" {
+            options.preserve_output = true;
             i += 1;
         } else if let Some(stripped) = arg.strip_prefix("--") {
             let name = stripped.to_uppercase().replace('-', "_");

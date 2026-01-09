@@ -56,7 +56,7 @@ Parameters can reference each other in any order (forward/backward). Circular de
 **Format**: Results saved to `results.csv` (or use `--output FILE`):
 - Parameter columns (in input order)
 - Metric columns (if `--metrics` specified)
-- stdout/stderr columns
+- stdout/stderr columns (if `--preserve-output` specified)
 
 **Resuming**: Failed experiments are skipped and can be resumed by re-running the same command.
 
@@ -66,9 +66,12 @@ Parameters can reference each other in any order (forward/backward). Circular de
 --stdout               Parse only stdout
 --stderr               Parse only stderr  
 --metrics m1,m2        Filter and validate specific metrics
+--preserve-output      Include stdout/stderr columns in the result CSV
 --output FILE          Output file (default: results.csv)
 -h, --help            Show help
 ```
+
+**Note**: At least one of `--metrics` or `--preserve-output` must be specified.
 
 ## Examples
 

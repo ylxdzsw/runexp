@@ -29,7 +29,14 @@ pub fn execute_experiments(
 
     // Load existing results if output file exists and validate compatibility
     let existing_results = if std::path::Path::new(&options.output_file).exists() {
-        match load_existing_results(&options.output_file, &expected_params, &options.metrics) {
+        match load_existing_results(
+            &options.output_file,
+            &expected_params,
+            &options.metrics,
+            options.preserve_output,
+            options.stdout_only,
+            options.stderr_only,
+        ) {
             Ok(res) => res,
             Err(e) => {
                 return Err(format!(
@@ -306,14 +313,16 @@ fn save_results(
         metric_columns.iter().map(|m| m.to_lowercase()).collect();
     headers.extend(metric_columns.clone());
 
-    // Add stdout/stderr columns based on options
-    if options.stdout_only {
-        headers.push("stdout".to_string());
-    } else if options.stderr_only {
-        headers.push("stderr".to_string());
-    } else {
-        headers.push("stdout".to_string());
-        headers.push("stderr".to_string());
+    // Add stdout/stderr columns only if preserve_output is enabled
+    if options.preserve_output {
+        if options.stdout_only {
+            headers.push("stdout".to_string());
+        } else if options.stderr_only {
+            headers.push("stderr".to_string());
+        } else {
+            headers.push("stdout".to_string());
+            headers.push("stderr".to_string());
+        }
     }
 
     // Write CSV header
@@ -346,14 +355,16 @@ fn save_results(
             values.push(escape_csv_field(val));
         }
 
-        // Add stdout/stderr based on options
-        if options.stdout_only {
-            values.push(escape_csv_field(&result.stdout));
-        } else if options.stderr_only {
-            values.push(escape_csv_field(&result.stderr));
-        } else {
-            values.push(escape_csv_field(&result.stdout));
-            values.push(escape_csv_field(&result.stderr));
+        // Add stdout/stderr only if preserve_output is enabled
+        if options.preserve_output {
+            if options.stdout_only {
+                values.push(escape_csv_field(&result.stdout));
+            } else if options.stderr_only {
+                values.push(escape_csv_field(&result.stderr));
+            } else {
+                values.push(escape_csv_field(&result.stdout));
+                values.push(escape_csv_field(&result.stderr));
+            }
         }
 
         writeln!(file, "{}", values.join(","))
@@ -379,6 +390,9 @@ fn load_existing_results(
     filename: &str,
     expected_params: &[String],
     expected_metrics: &[String],
+    preserve_output: bool,
+    stdout_only: bool,
+    stderr_only: bool,
 ) -> Result<Vec<ExperimentResult>, String> {
     let contents =
         fs::read_to_string(filename).map_err(|_| format!("Could not read file: {}", filename))?;
@@ -391,60 +405,34 @@ fn load_existing_results(
 
     let column_names = &records[0];
 
-    // Validate compatibility: check that parameter columns match
-    // Expected columns: params (sorted), metrics, stdout/stderr
-    let num_params = expected_params.len();
-    let num_metrics = expected_metrics.len();
+    // Build expected header
+    let mut expected_headers = expected_params.to_vec();
+    expected_headers.extend_from_slice(expected_metrics);
+    
+    if preserve_output {
+        if stdout_only {
+            expected_headers.push("stdout".to_string());
+        } else if stderr_only {
+            expected_headers.push("stderr".to_string());
+        } else {
+            expected_headers.push("stdout".to_string());
+            expected_headers.push("stderr".to_string());
+        }
+    }
 
-    // Find where stdout/stderr columns start
-    let stdout_idx = column_names.iter().position(|c| c == "stdout");
-    let stderr_idx = column_names.iter().position(|c| c == "stderr");
-
-    // Determine the number of columns before stdout/stderr (params + metrics)
-    let data_columns_end = stdout_idx
-        .or(stderr_idx)
-        .ok_or_else(|| "Missing stdout/stderr columns in result file".to_string())?;
-
-    // The file should have: params + metrics columns before stdout/stderr
-    let expected_data_columns = num_params + num_metrics;
-    if data_columns_end != expected_data_columns {
+    // Compare headers
+    if column_names != &expected_headers {
+        let file_header = column_names.join(",");
+        let expected_header = expected_headers.join(",");
         return Err(format!(
-            "Parameter/metric column count mismatch: file has {} data columns, expected {} ({} params + {} metrics)",
-            data_columns_end, expected_data_columns, num_params, num_metrics
+            "Header mismatch.\nExpected: {}\nFound:    {}",
+            expected_header, file_header
         ));
     }
 
-    // Verify parameter names match
-    let file_params: Vec<&String> = column_names[..num_params].iter().collect();
-    for (i, expected_param) in expected_params.iter().enumerate() {
-        if file_params.get(i) != Some(&expected_param) {
-            return Err(format!(
-                "Parameter name mismatch at position {}: file has '{}', expected '{}'",
-                i,
-                file_params
-                    .get(i)
-                    .map(|s| s.as_str())
-                    .unwrap_or("<missing>"),
-                expected_param
-            ));
-        }
-    }
-
-    // Verify metric columns match
-    let file_metrics: Vec<&String> = column_names[num_params..data_columns_end].iter().collect();
-    for (i, expected_metric) in expected_metrics.iter().enumerate() {
-        if file_metrics.get(i) != Some(&expected_metric) {
-            return Err(format!(
-                "Metric column mismatch at position {}: file has '{}', expected '{}'",
-                i,
-                file_metrics
-                    .get(i)
-                    .map(|s| s.as_str())
-                    .unwrap_or("<missing>"),
-                expected_metric
-            ));
-        }
-    }
+    let num_params = expected_params.len();
+    let num_metrics = expected_metrics.len();
+    let data_columns_end = num_params + num_metrics;
 
     // Parse the results
     let mut results = Vec::new();
@@ -646,6 +634,9 @@ mod tests {
             temp_path.to_str().unwrap(),
             &expected_params,
             &expected_metrics,
+            true,  // preserve_output
+            false, // stdout_only
+            false, // stderr_only
         );
 
         // Clean up
@@ -679,13 +670,16 @@ mod tests {
             temp_path.to_str().unwrap(),
             &expected_params,
             &expected_metrics,
+            true,  // preserve_output
+            false, // stdout_only
+            false, // stderr_only
         );
 
         // Clean up
         let _ = fs::remove_file(&temp_path);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("column count mismatch"));
+        assert!(result.unwrap_err().contains("Header mismatch"));
     }
 
     #[test]
@@ -709,12 +703,85 @@ mod tests {
             temp_path.to_str().unwrap(),
             &expected_params,
             &expected_metrics,
+            true,  // preserve_output
+            false, // stdout_only
+            false, // stderr_only
         );
 
         // Clean up
         let _ = fs::remove_file(&temp_path);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("mismatch"));
+        assert!(result.unwrap_err().contains("Header mismatch"));
+    }
+
+    #[test]
+    fn test_load_existing_results_preserve_output_mismatch() {
+        use std::io::Write;
+
+        // Create a temporary CSV file WITH stdout/stderr columns
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_runexp_preserve_output.csv");
+        {
+            let mut file = File::create(&temp_path).unwrap();
+            writeln!(file, "BATCHSIZE,GPU,accuracy,stdout,stderr").unwrap();
+            writeln!(file, "32,1,0.95,\"output\",\"error\"").unwrap();
+        }
+
+        let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string()];
+        let expected_metrics = vec!["accuracy".to_string()];
+
+        // Try to load WITHOUT preserve_output (should fail)
+        let result = load_existing_results(
+            temp_path.to_str().unwrap(),
+            &expected_params,
+            &expected_metrics,
+            false, // preserve_output = false but file has output columns
+            false, // stdout_only
+            false, // stderr_only
+        );
+
+        // Clean up
+        let _ = fs::remove_file(&temp_path);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Header mismatch"));
+    }
+
+    #[test]
+    fn test_load_existing_results_without_output_columns() {
+        use std::io::Write;
+
+        // Create a temporary CSV file WITHOUT stdout/stderr columns
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_runexp_no_output.csv");
+        {
+            let mut file = File::create(&temp_path).unwrap();
+            writeln!(file, "BATCHSIZE,GPU,accuracy").unwrap();
+            writeln!(file, "32,1,0.95").unwrap();
+        }
+
+        let expected_params = vec!["BATCHSIZE".to_string(), "GPU".to_string()];
+        let expected_metrics = vec!["accuracy".to_string()];
+
+        // Load WITHOUT preserve_output (should succeed)
+        let result = load_existing_results(
+            temp_path.to_str().unwrap(),
+            &expected_params,
+            &expected_metrics,
+            false, // preserve_output = false and file has no output columns
+            false, // stdout_only
+            false, // stderr_only
+        );
+
+        // Clean up
+        let _ = fs::remove_file(&temp_path);
+
+        assert!(result.is_ok());
+        let results = result.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].params.get("BATCHSIZE"), Some(&"32".to_string()));
+        assert_eq!(results[0].params.get("GPU"), Some(&"1".to_string()));
+        assert_eq!(results[0].metrics.get("accuracy"), Some(&"0.95".to_string()));
     }
 }
