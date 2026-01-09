@@ -73,7 +73,7 @@ import csv
 with open('$file') as f:
     reader = csv.DictReader(f)
     rows = list(reader)
-    if $row <= len(rows):
+    if $row <= len(rows) and $row > 0:
         print(rows[$row-1].get('$col', ''))
 "
 }
@@ -162,11 +162,11 @@ fi
 # Validate: Metrics are extracted (check for numeric values in accuracy and loss columns)
 accuracy_val=$(get_csv_value test_results3.csv 1 accuracy)
 loss_val=$(get_csv_value test_results3.csv 1 loss)
-if ! echo "$accuracy_val" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+if ! echo "$accuracy_val" | grep -qE '^-?[0-9]*\.?[0-9]+$'; then
     echo "✗ Accuracy not properly extracted: '$accuracy_val'"
     exit 1
 fi
-if ! echo "$loss_val" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+if ! echo "$loss_val" | grep -qE '^-?[0-9]*\.?[0-9]+$'; then
     echo "✗ Loss not properly extracted: '$loss_val'"
     exit 1
 fi
