@@ -90,7 +90,7 @@ fn print_usage() {
     println!("Values can contain:");
     println!("  - Comma-separated lists: 1,2,4");
     println!("  - Ranges: 1:4 (expands to 1,2,3)");
-    println!("  - Expressions referencing earlier parameters:");
+    println!("  - Expressions referencing other parameters:");
     println!("    - Variables: n");
     println!("    - Addition: n+1, 2+n");
     println!("    - Multiplication: 2n, n*n");
@@ -98,24 +98,23 @@ fn print_usage() {
     println!("  - Literal strings");
     println!();
     println!("Examples:");
-    println!("  # Run with different GPU and batch size combinations");
-    println!("  runexp --gpu 1,2,4 --batchsize 32,64 python train.py");
+    println!("  # Filter results by metrics");
+    println!("  runexp --metrics accuracy --gpu 1,2,4 --batchsize 32,64 python train.py");
     println!();
     println!("  # Use expressions for dependent parameters");
-    println!("  runexp --n 1,2,4 --gpu n --batchsize 32n python train.py");
+    println!("  runexp --metrics accuracy --n 1,2,4 --gpu n --batchsize 32n python train.py");
     println!();
     println!("  # Use heredoc for complex scripts");
-    println!("  runexp --gpu 1,2,4 --batchsize 32,64 <<EOF");
+    println!("  runexp --preserve-output --gpu 1,2,4 --batchsize 32,64 <<EOF");
     println!("  python tune.py --gpu $GPU --batchsize $BATCHSIZE");
     println!("  python evaluate.py");
     println!("  EOF");
-    println!();
-    println!("  # Filter results by metrics");
-    println!("  runexp --metrics accuracy --gpu 1,2 --batchsize 32 python train.py");
     println!();
     println!("  # Preserve stdout/stderr in the output CSV");
     println!("  runexp --preserve-output --gpu 1,2 --batchsize 32 python train.py");
     println!();
     println!("  # Specify output file");
-    println!("  runexp --output my_results.csv --gpu 1,2 --batchsize 32 python train.py");
+    println!(
+        "  runexp --output my_results.csv --metrics accuracy --gpu 1,2 --batchsize 32 python train.py"
+    );
 }

@@ -12,13 +12,13 @@ A command-line tool for running experiments with different parameter combination
 
 ```bash
 # Run all combinations of parameters
-runexp --gpu 1,2,4 --batchsize 32,64 python exp.py
+runexp --metrics accuracy --gpu 1,2,4 --batchsize 32,64 python exp.py
 
 # Use expressions (dependent parameters)
-runexp --n 1,2,4 --gpu n --batchsize 32n python exp.py
+runexp --metrics accuracy --n 1,2,4 --gpu n --batchsize 32n python exp.py
 
 # Use heredoc for complex commands
-runexp --gpu 1,2 --batchsize 32,64 <<"EOF"
+runexp --preserve-output --gpu 1,2 --batchsize 32,64 <<"EOF"
 python train.py --gpu $GPU --batchsize $BATCHSIZE
 python evaluate.py
 EOF
@@ -80,5 +80,5 @@ See the `examples/` directory:
 - `run_tests.sh` - Comprehensive test showing all features
 
 ```bash
-./target/release/runexp --gpu 1,2 --batchsize 32,64 python3 examples/test_experiment.py
+./target/release/runexp --metrics accuracy,loss --gpu 1,2 --batchsize 32,64 python3 examples/test_experiment.py
 ```
