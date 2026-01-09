@@ -36,6 +36,7 @@ fn main() {
     // Validate that at least one of --metrics or --preserve-output is specified
     if options.metrics.is_empty() && !options.preserve_output {
         eprintln!("Error: At least one of --metrics or --preserve-output must be specified");
+        eprintln!("       (Otherwise no meaningful output would be generated)");
         eprintln!();
         print_usage();
         std::process::exit(1);

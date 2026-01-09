@@ -303,27 +303,21 @@ fn save_results(
     }
 
     // Use the provided param_names order instead of sorting
-    // Build header: params, then metric columns (if any), then stdout and/or stderr
-    let mut headers = param_names.to_vec();
+    // Build header using the shared helper function
+    let headers = build_csv_headers(
+        param_names,
+        &options.metrics,
+        options.preserve_output,
+        options.stdout_only,
+        options.stderr_only,
+    );
 
-    // Only add metric columns if metrics are specified
-    let metric_columns: Vec<String> = options.metrics.clone();
     // Pre-compute lowercase metrics to avoid repeated allocations in the loop
-    let metric_columns_lower: Vec<String> =
-        metric_columns.iter().map(|m| m.to_lowercase()).collect();
-    headers.extend(metric_columns.clone());
-
-    // Add stdout/stderr columns only if preserve_output is enabled
-    if options.preserve_output {
-        if options.stdout_only {
-            headers.push("stdout".to_string());
-        } else if options.stderr_only {
-            headers.push("stderr".to_string());
-        } else {
-            headers.push("stdout".to_string());
-            headers.push("stderr".to_string());
-        }
-    }
+    let metric_columns_lower: Vec<String> = options
+        .metrics
+        .iter()
+        .map(|m| m.to_lowercase())
+        .collect();
 
     // Write CSV header
     let header_csv = headers
@@ -386,6 +380,30 @@ fn escape_csv_field(field: &str) -> String {
     }
 }
 
+fn build_csv_headers(
+    param_names: &[String],
+    metrics: &[String],
+    preserve_output: bool,
+    stdout_only: bool,
+    stderr_only: bool,
+) -> Vec<String> {
+    let mut headers = param_names.to_vec();
+    headers.extend_from_slice(metrics);
+    
+    if preserve_output {
+        if stdout_only {
+            headers.push("stdout".to_string());
+        } else if stderr_only {
+            headers.push("stderr".to_string());
+        } else {
+            headers.push("stdout".to_string());
+            headers.push("stderr".to_string());
+        }
+    }
+    
+    headers
+}
+
 fn load_existing_results(
     filename: &str,
     expected_params: &[String],
@@ -405,20 +423,14 @@ fn load_existing_results(
 
     let column_names = &records[0];
 
-    // Build expected header
-    let mut expected_headers = expected_params.to_vec();
-    expected_headers.extend_from_slice(expected_metrics);
-    
-    if preserve_output {
-        if stdout_only {
-            expected_headers.push("stdout".to_string());
-        } else if stderr_only {
-            expected_headers.push("stderr".to_string());
-        } else {
-            expected_headers.push("stdout".to_string());
-            expected_headers.push("stderr".to_string());
-        }
-    }
+    // Build expected header using the shared helper function
+    let expected_headers = build_csv_headers(
+        expected_params,
+        expected_metrics,
+        preserve_output,
+        stdout_only,
+        stderr_only,
+    );
 
     // Compare headers
     if column_names != &expected_headers {
