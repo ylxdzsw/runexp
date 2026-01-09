@@ -184,8 +184,8 @@ fn execute_single(
 }
 
 fn parse_output(text: &str, results: &mut HashMap<String, String>, metrics: &[String]) {
-    // Split by both \n and \r to handle carriage returns (e.g., progress bars)
-    // This ensures we process each line refresh separately and keep only the last value
+    // Split by both \n and \r to handle all line separators
+    // For any metric that appears multiple times, the last value is kept
     let lines: Vec<&str> = text.split(['\n', '\r']).collect();
 
     for line in lines {
@@ -570,7 +570,7 @@ mod tests {
     fn test_parse_output_special_cases() {
         let metrics: Vec<String> = vec![];
 
-        // Carriage return (progress bar simulation) - keep last value
+        // Multiple appearances - keep last value (carriage return case)
         let mut results = HashMap::new();
         parse_output(
             "progress: 10\rprogress: 50\rprogress: 100",
@@ -579,7 +579,7 @@ mod tests {
         );
         assert_eq!(results.get("progress: "), Some(&"100".to_string()));
 
-        // Multiple values with same label - keep last
+        // Multiple values with same label - keep last (newline case)
         let mut results = HashMap::new();
         parse_output("score: 10\nscore: 20\nscore: 30", &mut results, &metrics);
         assert_eq!(results.get("score: "), Some(&"30".to_string()));
