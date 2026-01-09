@@ -313,11 +313,8 @@ fn save_results(
     );
 
     // Pre-compute lowercase metrics to avoid repeated allocations in the loop
-    let metric_columns_lower: Vec<String> = options
-        .metrics
-        .iter()
-        .map(|m| m.to_lowercase())
-        .collect();
+    let metric_columns_lower: Vec<String> =
+        options.metrics.iter().map(|m| m.to_lowercase()).collect();
 
     // Write CSV header
     let header_csv = headers
@@ -794,6 +791,9 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].params.get("BATCHSIZE"), Some(&"32".to_string()));
         assert_eq!(results[0].params.get("GPU"), Some(&"1".to_string()));
-        assert_eq!(results[0].metrics.get("accuracy"), Some(&"0.95".to_string()));
+        assert_eq!(
+            results[0].metrics.get("accuracy"),
+            Some(&"0.95".to_string())
+        );
     }
 }
