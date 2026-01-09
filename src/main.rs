@@ -33,6 +33,15 @@ fn main() {
         }
     };
 
+    // Validate that at least one of --metrics or --preserve-output is specified
+    if options.metrics.is_empty() && !options.preserve_output {
+        eprintln!("Error: At least one of --metrics or --preserve-output must be specified");
+        eprintln!("       (Otherwise no meaningful output would be generated)");
+        eprintln!();
+        print_usage();
+        std::process::exit(1);
+    }
+
     if params.is_empty() {
         eprintln!("Error: No parameters specified");
         eprintln!();
@@ -68,6 +77,7 @@ fn print_usage() {
     println!("  --stdout               Parse output only from stdout");
     println!("  --stderr               Parse output only from stderr");
     println!("  --metrics m1,m2        Filter results by metrics (comma-separated)");
+    println!("  --preserve-output      Include stdout/stderr columns in the result CSV");
     println!("  --output FILE          Output file (default: results.csv)");
     println!("  -h, --help             Show this help message");
     println!();
@@ -102,6 +112,9 @@ fn print_usage() {
     println!();
     println!("  # Filter results by metrics");
     println!("  runexp --metrics accuracy --gpu 1,2 --batchsize 32 python train.py");
+    println!();
+    println!("  # Preserve stdout/stderr in the output CSV");
+    println!("  runexp --preserve-output --gpu 1,2 --batchsize 32 python train.py");
     println!();
     println!("  # Specify output file");
     println!("  runexp --output my_results.csv --gpu 1,2 --batchsize 32 python train.py");

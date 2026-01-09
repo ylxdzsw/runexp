@@ -80,7 +80,7 @@ with open('$file') as f:
 
 echo "Test 1: Basic parameter combinations"
 echo "-------------------------------------"
-$RUNEXP --gpu 1,2 --batchsize 32,64 --output test_results1.csv python3 examples/test_experiment.py
+$RUNEXP --preserve-output --gpu 1,2 --batchsize 32,64 --output test_results1.csv python3 examples/test_experiment.py
 # Validate: Should have 4 combinations (2 gpu x 2 batchsize)
 row_count=$(count_csv_rows test_results1.csv)
 if [ "$row_count" -ne 4 ]; then
@@ -119,7 +119,7 @@ echo
 
 echo "Test 2: Using expressions"
 echo "-------------------------"
-$RUNEXP --n 1,2 --gpu n --batchsize 32n --output test_results2.csv python3 examples/test_experiment.py
+$RUNEXP --preserve-output --n 1,2 --gpu n --batchsize 32n --output test_results2.csv python3 examples/test_experiment.py
 # Validate: Should have 2 combinations (n=1,2)
 row_count=$(count_csv_rows test_results2.csv)
 if [ "$row_count" -ne 2 ]; then
@@ -176,7 +176,7 @@ echo
 echo "Test 4: Auto-skip finished experiments"
 echo "---------------------------------------"
 echo "Running experiments..."
-$RUNEXP --gpu 1,2,4 --batchsize 32 --output test_results4.csv python3 examples/test_experiment.py
+$RUNEXP --preserve-output --gpu 1,2,4 --batchsize 32 --output test_results4.csv python3 examples/test_experiment.py
 # Validate: Should have 3 combinations
 row_count=$(count_csv_rows test_results4.csv)
 if [ "$row_count" -ne 3 ]; then
@@ -184,7 +184,7 @@ if [ "$row_count" -ne 3 ]; then
     exit 1
 fi
 echo "Re-running same command (should skip existing experiments)..."
-output=$($RUNEXP --gpu 1,2,4 --batchsize 32 --output test_results4.csv python3 examples/test_experiment.py 2>&1)
+output=$($RUNEXP --preserve-output --gpu 1,2,4 --batchsize 32 --output test_results4.csv python3 examples/test_experiment.py 2>&1)
 # Validate: Should report skipping
 if ! echo "$output" | grep -q "Skipping"; then
     echo "✗ Did not skip existing experiments"
@@ -201,7 +201,7 @@ echo
 
 echo "Test 5: Using heredoc"
 echo "---------------------"
-$RUNEXP --gpu 1,2 --batchsize 32 --output test_results5.csv <<'EOF'
+$RUNEXP --preserve-output --gpu 1,2 --batchsize 32 --output test_results5.csv <<'EOF'
 GPU=$GPU
 BATCHSIZE=$BATCHSIZE
 python3 examples/test_experiment.py
@@ -231,6 +231,17 @@ if $RUNEXP --metrics "nonexistent" --gpu 1 --batchsize 32 --output test_results6
     echo "✓ Correctly failed when metric not found"
 else
     echo "✗ Failed to detect missing metric"
+    exit 1
+fi
+echo
+
+echo "Test 6b: Missing --metrics and --preserve-output (should fail)"
+echo "----------------------------------------------------------------"
+echo "Testing without --metrics or --preserve-output (should fail)..."
+if $RUNEXP --gpu 1 --batchsize 32 --output test_results6b.csv python3 examples/test_experiment.py 2>&1 | grep -q "At least one of --metrics or --preserve-output must be specified"; then
+    echo "✓ Correctly failed when neither option specified"
+else
+    echo "✗ Failed to detect missing options"
     exit 1
 fi
 echo
