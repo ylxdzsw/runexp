@@ -389,7 +389,7 @@ fn build_csv_headers(
 ) -> Vec<String> {
     let mut headers = param_names.to_vec();
     headers.extend_from_slice(metrics);
-    
+
     if preserve_output {
         if stdout_only {
             headers.push("stdout".to_string());
@@ -400,7 +400,7 @@ fn build_csv_headers(
             headers.push("stderr".to_string());
         }
     }
-    
+
     headers
 }
 
