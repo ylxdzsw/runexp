@@ -82,7 +82,7 @@ fn print_usage() {
     println!("  -h, --help             Show this help message");
     println!();
     println!("Parameters:");
-    println!("  Parameters are specified as --name value");
+    println!("  Parameters are specified as --name value or --name=value");
     println!("  Parameter names are converted to uppercase environment variables");
     println!("  Dashes and underscores in names are converted to underscores");
     println!("  Example: --batch-size becomes BATCH_SIZE, --gpu becomes GPU");
