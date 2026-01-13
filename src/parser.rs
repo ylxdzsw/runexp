@@ -95,22 +95,15 @@ pub fn parse_args(args: &[String]) -> ParseResult {
         } else if let Some(stripped) = arg.strip_prefix("-") {
             // Handle short options with single dash
             if stripped.len() == 1 {
-                let short_opt = stripped.chars().next().unwrap();
-                // Check if this is a known short option
-                if short_opt == 'm' || short_opt == 'p' || short_opt == 'h' {
-                    // Already handled above
-                    return Err(format!("Unknown option: {}", arg));
-                } else {
-                    // Treat as a short parameter
-                    let param_name = short_opt.to_uppercase().to_string();
-                    i += 1;
-                    if i >= args.len() {
-                        return Err(format!("Parameter {} requires a value", arg));
-                    }
-                    let param_value = args[i].clone();
-                    params.push((param_name, param_value));
-                    i += 1;
+                // Treat as a short parameter (known short options like -m, -p, -h are handled above)
+                let param_name = stripped.to_uppercase();
+                i += 1;
+                if i >= args.len() {
+                    return Err(format!("Parameter {} requires a value", arg));
                 }
+                let param_value = args[i].clone();
+                params.push((param_name, param_value));
+                i += 1;
             } else if let Some(eq_pos) = stripped.find('=') {
                 // Handle "-x=value" syntax
                 let short_opt = &stripped[..eq_pos];
