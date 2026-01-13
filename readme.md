@@ -65,13 +65,15 @@ Parameters can reference each other in any order (forward/backward). Circular de
 ```
 --stdout               Parse only stdout
 --stderr               Parse only stderr  
---metrics m1,m2        Filter and validate specific metrics
---preserve-output      Include stdout/stderr columns in the result CSV
+-m, --metrics m1,m2    Filter and validate specific metrics
+-p, --preserve-output  Include stdout/stderr columns in the result CSV
 --output FILE          Output file (default: results.csv)
 -h, --help            Show help
 ```
 
-**Note**: At least one of `--metrics` or `--preserve-output` must be specified.
+**Note**: At least one of `-m`/`--metrics` or `-p`/`--preserve-output` must be specified.
+
+**Short options**: Single-letter parameters can also use short form with a single dash (e.g., `-n 1,2` instead of `--n 1,2`).
 
 ## Examples
 

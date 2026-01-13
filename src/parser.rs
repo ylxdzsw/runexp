@@ -37,13 +37,19 @@ pub fn parse_args(args: &[String]) -> ParseResult {
         } else if arg == "--stderr" {
             options.stderr_only = true;
             i += 1;
-        } else if arg == "--metrics" || arg.starts_with("--metrics=") {
+        } else if arg == "--metrics"
+            || arg == "-m"
+            || arg.starts_with("--metrics=")
+            || arg.starts_with("-m=")
+        {
             let metrics_value = if let Some(value) = arg.strip_prefix("--metrics=") {
+                value.to_string()
+            } else if let Some(value) = arg.strip_prefix("-m=") {
                 value.to_string()
             } else {
                 i += 1;
                 if i >= args.len() {
-                    return Err("--metrics requires an argument".to_string());
+                    return Err("--metrics/-m requires an argument".to_string());
                 }
                 args[i].clone()
             };
@@ -64,9 +70,12 @@ pub fn parse_args(args: &[String]) -> ParseResult {
             };
             options.output_file = output_value;
             i += 1;
-        } else if arg == "--preserve-output" {
+        } else if arg == "--preserve-output" || arg == "-p" {
             options.preserve_output = true;
             i += 1;
+        } else if arg == "-h" || arg == "--help" {
+            // Return a special error that indicates help was requested
+            return Err("HELP_REQUESTED".to_string());
         } else if let Some(stripped) = arg.strip_prefix("--") {
             // Handle both "--param value" and "--param=value" syntax
             let (name, value) = if let Some(eq_pos) = stripped.find('=') {
@@ -83,6 +92,32 @@ pub fn parse_args(args: &[String]) -> ParseResult {
             };
             params.push((name, value));
             i += 1;
+        } else if let Some(stripped) = arg.strip_prefix("-") {
+            // Handle short options with single dash
+            if stripped.len() == 1 {
+                // Treat as a short parameter (known short options like -m, -p, -h are handled above)
+                let param_name = stripped.to_uppercase();
+                i += 1;
+                if i >= args.len() {
+                    return Err(format!("Parameter {} requires a value", arg));
+                }
+                let param_value = args[i].clone();
+                params.push((param_name, param_value));
+                i += 1;
+            } else if let Some(eq_pos) = stripped.find('=') {
+                // Handle "-x=value" syntax
+                let short_opt = &stripped[..eq_pos];
+                if short_opt.len() == 1 {
+                    let param_name = short_opt.to_uppercase();
+                    let param_value = stripped[eq_pos + 1..].to_string();
+                    params.push((param_name, param_value));
+                    i += 1;
+                } else {
+                    return Err(format!("Unknown option: {}", arg));
+                }
+            } else {
+                return Err(format!("Unknown option: {}", arg));
+            }
         } else {
             break;
         }

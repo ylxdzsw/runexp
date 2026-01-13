@@ -26,9 +26,12 @@ fn main() {
     let (params, command, options) = match parse_args(&args) {
         Ok(result) => result,
         Err(e) => {
-            eprintln!("Error parsing arguments: {}", e);
-            eprintln!();
-            print_usage();
+            if e == "HELP_REQUESTED" {
+                print_usage();
+                return;
+            }
+            eprintln!("Error: {}", e);
+            eprintln!("Use --help or -h for usage information");
             std::process::exit(1);
         }
     };
@@ -36,16 +39,15 @@ fn main() {
     // Validate that at least one of --metrics or --preserve-output is specified
     if options.metrics.is_empty() && !options.preserve_output {
         eprintln!("Error: At least one of --metrics or --preserve-output must be specified");
+        eprintln!("       Use -m or -p for short options");
         eprintln!("       (Otherwise no meaningful output would be generated)");
-        eprintln!();
-        print_usage();
+        eprintln!("Use --help or -h for usage information");
         std::process::exit(1);
     }
 
     if params.is_empty() {
         eprintln!("Error: No parameters specified");
-        eprintln!();
-        print_usage();
+        eprintln!("Use --help or -h for usage information");
         std::process::exit(1);
     }
 
@@ -76,16 +78,17 @@ fn print_usage() {
     println!("Options:");
     println!("  --stdout               Parse output only from stdout");
     println!("  --stderr               Parse output only from stderr");
-    println!("  --metrics m1,m2        Filter results by metrics (comma-separated)");
-    println!("  --preserve-output      Include stdout/stderr columns in the result CSV");
+    println!("  -m, --metrics m1,m2    Filter results by metrics (comma-separated)");
+    println!("  -p, --preserve-output  Include stdout/stderr columns in the result CSV");
     println!("  --output FILE          Output file (default: results.csv)");
     println!("  -h, --help             Show this help message");
     println!();
     println!("Parameters:");
     println!("  Parameters are specified as --name value or --name=value");
+    println!("  Single-letter parameters can use short form: -n value or -n=value");
     println!("  Parameter names are converted to uppercase environment variables");
     println!("  Dashes and underscores in names are converted to underscores");
-    println!("  Example: --batch-size becomes BATCH_SIZE, --gpu becomes GPU");
+    println!("  Example: --batch-size becomes BATCH_SIZE, --gpu becomes GPU, -n becomes N");
     println!();
     println!("Values can contain:");
     println!("  - Comma-separated lists: 1,2,4");
