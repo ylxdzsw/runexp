@@ -35,9 +35,9 @@ batchsize = int(os.environ["BATCHSIZE"])
 
 ## Parameter Syntax
 
-**Naming**: Parameters are converted to uppercase environment variables. Dashes and underscores both become underscores.
-- `--batch-size` → `BATCH_SIZE`
-- `--gpu` → `GPU`
+**Naming**: Parameters are converted to uppercase environment variables. Dashes and underscores both become underscores. Parameters can be specified using either space or equal sign syntax.
+- `--batch-size 32` or `--batch-size=32` → `BATCH_SIZE`
+- `--gpu 1,2` or `--gpu=1,2` → `GPU`
 
 **Values** support:
 - **Lists**: `1,2,4` (creates combinations)

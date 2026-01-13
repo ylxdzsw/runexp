@@ -37,30 +37,50 @@ pub fn parse_args(args: &[String]) -> ParseResult {
         } else if arg == "--stderr" {
             options.stderr_only = true;
             i += 1;
-        } else if arg == "--metrics" {
+        } else if arg == "--metrics" || arg.starts_with("--metrics=") {
+            let metrics_value = if let Some(value) = arg.strip_prefix("--metrics=") {
+                value.to_string()
+            } else {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--metrics requires an argument".to_string());
+                }
+                args[i].clone()
+            };
+            options.metrics = metrics_value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
             i += 1;
-            if i >= args.len() {
-                return Err("--metrics requires an argument".to_string());
-            }
-            options.metrics = args[i].split(',').map(|s| s.trim().to_string()).collect();
-            i += 1;
-        } else if arg == "--output" {
-            i += 1;
-            if i >= args.len() {
-                return Err("--output requires an argument".to_string());
-            }
-            options.output_file = args[i].clone();
+        } else if arg == "--output" || arg.starts_with("--output=") {
+            let output_value = if let Some(value) = arg.strip_prefix("--output=") {
+                value.to_string()
+            } else {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--output requires an argument".to_string());
+                }
+                args[i].clone()
+            };
+            options.output_file = output_value;
             i += 1;
         } else if arg == "--preserve-output" {
             options.preserve_output = true;
             i += 1;
         } else if let Some(stripped) = arg.strip_prefix("--") {
-            let name = stripped.to_uppercase().replace('-', "_");
-            i += 1;
-            if i >= args.len() {
-                return Err(format!("Parameter {} requires a value", arg));
-            }
-            let value = args[i].clone();
+            // Handle both "--param value" and "--param=value" syntax
+            let (name, value) = if let Some(eq_pos) = stripped.find('=') {
+                let param_name = stripped[..eq_pos].to_uppercase().replace('-', "_");
+                let param_value = stripped[eq_pos + 1..].to_string();
+                (param_name, param_value)
+            } else {
+                let param_name = stripped.to_uppercase().replace('-', "_");
+                i += 1;
+                if i >= args.len() {
+                    return Err(format!("Parameter --{} requires a value", stripped));
+                }
+                (param_name, args[i].clone())
+            };
             params.push((name, value));
             i += 1;
         } else {

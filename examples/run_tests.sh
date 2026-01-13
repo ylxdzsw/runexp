@@ -268,12 +268,62 @@ fi
 echo "✓ Metrics with spaces work correctly and are properly extracted"
 echo
 
+echo "Test 8: Equal sign parameter syntax"
+echo "-------------------------------------"
+$RUNEXP --preserve-output --gpu=1,2 --batchsize=32,64 --output=test_results8.csv python3 examples/test_experiment.py
+# Validate: Should have 4 combinations (2 gpu x 2 batchsize)
+row_count=$(count_csv_rows test_results8.csv)
+if [ "$row_count" -ne 4 ]; then
+    echo "✗ Expected 4 rows, got $row_count"
+    exit 1
+fi
+# Validate: All combinations exist
+if ! check_csv_contains test_results8.csv 1 32; then
+    echo "✗ Missing combination: GPU=1, BATCHSIZE=32"
+    exit 1
+fi
+if ! check_csv_contains test_results8.csv 1 64; then
+    echo "✗ Missing combination: GPU=1, BATCHSIZE=64"
+    exit 1
+fi
+if ! check_csv_contains test_results8.csv 2 32; then
+    echo "✗ Missing combination: GPU=2, BATCHSIZE=32"
+    exit 1
+fi
+if ! check_csv_contains test_results8.csv 2 64; then
+    echo "✗ Missing combination: GPU=2, BATCHSIZE=64"
+    exit 1
+fi
+echo "✓ Equal sign parameter syntax works correctly"
+echo
+
+echo "Test 9: Mixed equal sign and space syntax"
+echo "-------------------------------------------"
+$RUNEXP --metrics=accuracy --gpu 1,2 --batchsize=32 --output test_results9.csv python3 examples/test_experiment.py
+# Validate: Should have 2 combinations
+row_count=$(count_csv_rows test_results9.csv)
+if [ "$row_count" -ne 2 ]; then
+    echo "✗ Expected 2 rows, got $row_count"
+    exit 1
+fi
+# Validate: Combinations exist
+if ! check_csv_contains test_results9.csv 1 32; then
+    echo "✗ Missing combination: GPU=1, BATCHSIZE=32"
+    exit 1
+fi
+if ! check_csv_contains test_results9.csv 2 32; then
+    echo "✗ Missing combination: GPU=2, BATCHSIZE=32"
+    exit 1
+fi
+echo "✓ Mixed equal sign and space syntax works correctly"
+echo
+
 echo "=== Showing sample output ==="
 echo "First 3 lines of test_results1.csv:"
 head -3 test_results1.csv
 echo
 echo "All CSV files created:"
-ls -lh test_results[1-57].csv 2>/dev/null || true
+ls -lh test_results[1-9].csv 2>/dev/null || true
 echo
 
 echo "=== All tests passed! ==="
