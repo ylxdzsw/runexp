@@ -22,12 +22,22 @@ fn main() {
         return;
     }
 
+    // Check for version flag
+    if args.contains(&"--version".to_string()) || args.contains(&"-v".to_string()) {
+        print_version();
+        return;
+    }
+
     // Parse command line arguments
     let (params, command, options) = match parse_args(&args) {
         Ok(result) => result,
         Err(e) => {
             if e == "HELP_REQUESTED" {
                 print_usage();
+                return;
+            }
+            if e == "VERSION_REQUESTED" {
+                print_version();
                 return;
             }
             eprintln!("Error: {}", e);
@@ -81,6 +91,7 @@ fn print_usage() {
     println!("  -m, --metrics m1,m2    Filter results by metrics (comma-separated)");
     println!("  -p, --preserve-output  Include stdout/stderr columns in the result CSV");
     println!("  --output FILE          Output file (default: results.csv)");
+    println!("  -v, --version          Show version information");
     println!("  -h, --help             Show this help message");
     println!();
     println!("Parameters:");
@@ -120,4 +131,8 @@ fn print_usage() {
     println!(
         "  runexp --output my_results.csv --metrics accuracy --gpu 1,2 --batchsize 32 python train.py"
     );
+}
+
+fn print_version() {
+    println!("runexp {}", env!("CARGO_PKG_VERSION"));
 }

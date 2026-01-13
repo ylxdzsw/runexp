@@ -76,6 +76,9 @@ pub fn parse_args(args: &[String]) -> ParseResult {
         } else if arg == "-h" || arg == "--help" {
             // Return a special error that indicates help was requested
             return Err("HELP_REQUESTED".to_string());
+        } else if arg == "-v" || arg == "--version" {
+            // Return a special error that indicates version was requested
+            return Err("VERSION_REQUESTED".to_string());
         } else if let Some(stripped) = arg.strip_prefix("--") {
             // Handle both "--param value" and "--param=value" syntax
             let (name, value) = if let Some(eq_pos) = stripped.find('=') {

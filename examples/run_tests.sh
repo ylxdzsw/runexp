@@ -318,6 +318,22 @@ fi
 echo "✓ Mixed equal sign and space syntax works correctly"
 echo
 
+echo "Test 10: Version flag"
+echo "----------------------"
+version_output=$($RUNEXP --version 2>&1)
+if ! echo "$version_output" | grep -qE '^runexp [0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "✗ Version output format incorrect: '$version_output'"
+    exit 1
+fi
+# Test short form too
+version_output_short=$($RUNEXP -v 2>&1)
+if [ "$version_output" != "$version_output_short" ]; then
+    echo "✗ Short version flag output differs from long form"
+    exit 1
+fi
+echo "✓ Version flag works correctly ($version_output)"
+echo
+
 echo "=== Showing sample output ==="
 echo "First 3 lines of test_results1.csv:"
 head -3 test_results1.csv

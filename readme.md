@@ -8,6 +8,15 @@ A command-line tool for running experiments with different parameter combination
 - **Language agnostic**: Works via environment variables - supports any language
 - **Plain text output**: Results saved as CSV for easy processing
 
+## Installation
+
+Download the latest release from the [Releases](https://github.com/ylxdzsw/runexp/releases) page, or build from source:
+
+```bash
+cargo build --release
+./target/release/runexp --version
+```
+
 ## Quick Start
 
 ```bash
@@ -68,7 +77,8 @@ Parameters can reference each other in any order (forward/backward). Circular de
 -m, --metrics m1,m2    Filter and validate specific metrics
 -p, --preserve-output  Include stdout/stderr columns in the result CSV
 --output FILE          Output file (default: results.csv)
--h, --help            Show help
+-v, --version          Show version information
+-h, --help             Show help
 ```
 
 **Note**: At least one of `-m`/`--metrics` or `-p`/`--preserve-output` must be specified.
