@@ -1,7 +1,7 @@
 use crate::evaluator::Combination;
 use crate::parser::Options;
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -26,6 +26,10 @@ pub fn execute_experiments(
     } else {
         Vec::new()
     };
+
+    // Pre-compute lowercase metrics to avoid repeated allocations in the loop
+    let metric_columns_lower: Vec<String> =
+        options.metrics.iter().map(|m| m.to_lowercase()).collect();
 
     // Check if output file exists and load existing results for skip detection
     let file_exists = std::path::Path::new(&options.output_file).exists();
@@ -79,7 +83,13 @@ pub fn execute_experiments(
                     stderr,
                 };
                 // Append result immediately after each successful run
-                append_result(&result, &expected_params, &options.output_file, options)?;
+                append_result(
+                    &result,
+                    &expected_params,
+                    &options.output_file,
+                    options,
+                    &metric_columns_lower,
+                )?;
                 new_results_count += 1;
             }
             Err(e) => {
@@ -326,16 +336,12 @@ fn append_result(
     param_names: &[String],
     filename: &str,
     options: &Options,
+    metric_columns_lower: &[String],
 ) -> Result<(), String> {
-    use std::fs::OpenOptions;
-
     let mut file = OpenOptions::new()
         .append(true)
         .open(filename)
         .map_err(|e| format!("Failed to open results file for appending: {}", e))?;
-
-    let metric_columns_lower: Vec<String> =
-        options.metrics.iter().map(|m| m.to_lowercase()).collect();
 
     let mut values: Vec<String> = Vec::new();
 
@@ -346,7 +352,7 @@ fn append_result(
     }
 
     // Add metric values (find matching metric for each metric name)
-    for metric_lower in &metric_columns_lower {
+    for metric_lower in metric_columns_lower {
         let val = result
             .metrics
             .iter()
