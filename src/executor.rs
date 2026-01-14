@@ -1,7 +1,7 @@
 use crate::evaluator::Combination;
 use crate::parser::Options;
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -18,7 +18,7 @@ pub fn execute_experiments(
     command: &[String],
     options: &Options,
 ) -> Result<(), String> {
-    let mut results = Vec::new();
+    let mut new_results_count = 0;
 
     // Get expected parameter names from combinations (in input order)
     let expected_params: Vec<String> = if let Some(first_combo) = combinations.first() {
@@ -27,8 +27,13 @@ pub fn execute_experiments(
         Vec::new()
     };
 
-    // Load existing results if output file exists and validate compatibility
-    let existing_results = if std::path::Path::new(&options.output_file).exists() {
+    // Pre-compute lowercase metrics to avoid repeated allocations in the loop
+    let metric_columns_lower: Vec<String> =
+        options.metrics.iter().map(|m| m.to_lowercase()).collect();
+
+    // Check if output file exists and load existing results for skip detection
+    let file_exists = std::path::Path::new(&options.output_file).exists();
+    let existing_results = if file_exists {
         match load_existing_results(
             &options.output_file,
             &expected_params,
@@ -49,6 +54,13 @@ pub fn execute_experiments(
         Vec::new()
     };
 
+    let existing_count = existing_results.len();
+
+    // If the file doesn't exist, write the header first
+    if !file_exists {
+        write_csv_header(&expected_params, &options.output_file, options)?;
+    }
+
     for (idx, combo) in combinations.iter().enumerate() {
         // Skip if already exists in the result file
         if result_exists(&existing_results, combo) {
@@ -57,10 +69,6 @@ pub fn execute_experiments(
                 idx + 1,
                 combinations.len()
             );
-            // Find and copy the existing result
-            if let Some(existing) = existing_results.iter().find(|r| r.params == combo.params) {
-                results.push(existing.clone());
-            }
             continue;
         }
 
@@ -74,9 +82,15 @@ pub fn execute_experiments(
                     stdout,
                     stderr,
                 };
-                results.push(result);
-                // Store results immediately after each successful run
-                save_results(&results, &expected_params, &options.output_file, options)?;
+                // Append result immediately after each successful run
+                append_result(
+                    &result,
+                    &expected_params,
+                    &options.output_file,
+                    options,
+                    &metric_columns_lower,
+                )?;
+                new_results_count += 1;
             }
             Err(e) => {
                 eprintln!("Failed to run combination: {}", e);
@@ -86,9 +100,11 @@ pub fn execute_experiments(
     }
 
     println!(
-        "Completed {} out of {} combinations",
-        results.len(),
-        combinations.len()
+        "Completed {} out of {} combinations ({} existing, {} new)",
+        existing_count + new_results_count,
+        combinations.len(),
+        existing_count,
+        new_results_count
     );
 
     Ok(())
@@ -289,8 +305,7 @@ fn should_keep_label(label: &str, metrics: &[String]) -> bool {
         .any(|m| label.to_lowercase().contains(&m.to_lowercase()))
 }
 
-fn save_results(
-    results: &[ExperimentResult],
+fn write_csv_header(
     param_names: &[String],
     filename: &str,
     options: &Options,
@@ -298,12 +313,6 @@ fn save_results(
     let mut file =
         File::create(filename).map_err(|e| format!("Failed to create results file: {}", e))?;
 
-    if results.is_empty() {
-        return Ok(());
-    }
-
-    // Use the provided param_names order instead of sorting
-    // Build header using the shared helper function
     let headers = build_csv_headers(
         param_names,
         &options.metrics,
@@ -312,11 +321,6 @@ fn save_results(
         options.stderr_only,
     );
 
-    // Pre-compute lowercase metrics to avoid repeated allocations in the loop
-    let metric_columns_lower: Vec<String> =
-        options.metrics.iter().map(|m| m.to_lowercase()).collect();
-
-    // Write CSV header
     let header_csv = headers
         .iter()
         .map(|h| escape_csv_field(h))
@@ -324,43 +328,54 @@ fn save_results(
         .join(",");
     writeln!(file, "{}", header_csv).map_err(|e| format!("Failed to write to file: {}", e))?;
 
-    // Write data rows
-    for result in results {
-        let mut values: Vec<String> = Vec::new();
+    Ok(())
+}
 
-        // Add parameter values
-        for name in param_names {
-            let val = result.params.get(name).map(|s| s.as_str()).unwrap_or("");
-            values.push(escape_csv_field(val));
-        }
+fn append_result(
+    result: &ExperimentResult,
+    param_names: &[String],
+    filename: &str,
+    options: &Options,
+    metric_columns_lower: &[String],
+) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(filename)
+        .map_err(|e| format!("Failed to open results file for appending: {}", e))?;
 
-        // Add metric values (find matching metric for each metric name)
-        for metric_lower in &metric_columns_lower {
-            // Find the metric that matches this metric name (case-insensitive)
-            let val = result
-                .metrics
-                .iter()
-                .find(|(label, _)| label.to_lowercase().contains(metric_lower))
-                .map(|(_, v)| v.as_str())
-                .unwrap_or("");
-            values.push(escape_csv_field(val));
-        }
+    let mut values: Vec<String> = Vec::new();
 
-        // Add stdout/stderr only if preserve_output is enabled
-        if options.preserve_output {
-            if options.stdout_only {
-                values.push(escape_csv_field(&result.stdout));
-            } else if options.stderr_only {
-                values.push(escape_csv_field(&result.stderr));
-            } else {
-                values.push(escape_csv_field(&result.stdout));
-                values.push(escape_csv_field(&result.stderr));
-            }
-        }
-
-        writeln!(file, "{}", values.join(","))
-            .map_err(|e| format!("Failed to write to file: {}", e))?;
+    // Add parameter values
+    for name in param_names {
+        let val = result.params.get(name).map(|s| s.as_str()).unwrap_or("");
+        values.push(escape_csv_field(val));
     }
+
+    // Add metric values (find matching metric for each metric name)
+    for metric_lower in metric_columns_lower {
+        let val = result
+            .metrics
+            .iter()
+            .find(|(label, _)| label.to_lowercase().contains(metric_lower))
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
+        values.push(escape_csv_field(val));
+    }
+
+    // Add stdout/stderr only if preserve_output is enabled
+    if options.preserve_output {
+        if options.stdout_only {
+            values.push(escape_csv_field(&result.stdout));
+        } else if options.stderr_only {
+            values.push(escape_csv_field(&result.stderr));
+        } else {
+            values.push(escape_csv_field(&result.stdout));
+            values.push(escape_csv_field(&result.stderr));
+        }
+    }
+
+    writeln!(file, "{}", values.join(","))
+        .map_err(|e| format!("Failed to write to file: {}", e))?;
 
     Ok(())
 }
