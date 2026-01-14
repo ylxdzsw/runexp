@@ -19,6 +19,7 @@ pub fn execute_experiments(
     options: &Options,
 ) -> Result<(), String> {
     let mut new_results_count = 0;
+    let mut skipped_count = 0;
 
     // Get expected parameter names from combinations (in input order)
     let expected_params: Vec<String> = if let Some(first_combo) = combinations.first() {
@@ -54,8 +55,6 @@ pub fn execute_experiments(
         Vec::new()
     };
 
-    let existing_count = existing_results.len();
-
     // If the file doesn't exist, write the header first
     if !file_exists {
         write_csv_header(&expected_params, &options.output_file, options)?;
@@ -69,6 +68,7 @@ pub fn execute_experiments(
                 idx + 1,
                 combinations.len()
             );
+            skipped_count += 1;
             continue;
         }
 
@@ -100,10 +100,10 @@ pub fn execute_experiments(
     }
 
     println!(
-        "Completed {} out of {} combinations ({} existing, {} new)",
-        existing_count + new_results_count,
+        "Completed {} out of {} combinations ({} skipped, {} new)",
+        skipped_count + new_results_count,
         combinations.len(),
-        existing_count,
+        skipped_count,
         new_results_count
     );
 
