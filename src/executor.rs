@@ -1,7 +1,7 @@
 use crate::evaluator::Combination;
 use crate::parser::Options;
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -18,14 +18,15 @@ pub fn execute_experiments(
     command: &[String],
     options: &Options,
 ) -> Result<(), String> {
-    let mut results = Vec::new();
-
     // Get expected parameter names from combinations (in input order)
     let expected_params: Vec<String> = if let Some(first_combo) = combinations.first() {
         first_combo.param_order.clone()
     } else {
         Vec::new()
     };
+
+    // Track count for reporting
+    let mut completed_count = 0;
 
     // Load existing results if output file exists and validate compatibility
     let existing_results = if std::path::Path::new(&options.output_file).exists() {
@@ -46,6 +47,8 @@ pub fn execute_experiments(
             }
         }
     } else {
+        // File doesn't exist, create it with header
+        create_csv_with_header(&expected_params, &options.output_file, options)?;
         Vec::new()
     };
 
@@ -57,10 +60,7 @@ pub fn execute_experiments(
                 idx + 1,
                 combinations.len()
             );
-            // Find and copy the existing result
-            if let Some(existing) = existing_results.iter().find(|r| r.params == combo.params) {
-                results.push(existing.clone());
-            }
+            completed_count += 1;
             continue;
         }
 
@@ -74,9 +74,9 @@ pub fn execute_experiments(
                     stdout,
                     stderr,
                 };
-                results.push(result);
-                // Store results immediately after each successful run
-                save_results(&results, &expected_params, &options.output_file, options)?;
+                // Append result immediately to file (preserving existing data)
+                append_result(&result, &expected_params, &options.output_file, options)?;
+                completed_count += 1;
             }
             Err(e) => {
                 eprintln!("Failed to run combination: {}", e);
@@ -87,7 +87,7 @@ pub fn execute_experiments(
 
     println!(
         "Completed {} out of {} combinations",
-        results.len(),
+        completed_count,
         combinations.len()
     );
 
@@ -289,8 +289,8 @@ fn should_keep_label(label: &str, metrics: &[String]) -> bool {
         .any(|m| label.to_lowercase().contains(&m.to_lowercase()))
 }
 
-fn save_results(
-    results: &[ExperimentResult],
+/// Create a new CSV file with header only (for new experiments)
+fn create_csv_with_header(
     param_names: &[String],
     filename: &str,
     options: &Options,
@@ -298,12 +298,6 @@ fn save_results(
     let mut file =
         File::create(filename).map_err(|e| format!("Failed to create results file: {}", e))?;
 
-    if results.is_empty() {
-        return Ok(());
-    }
-
-    // Use the provided param_names order instead of sorting
-    // Build header using the shared helper function
     let headers = build_csv_headers(
         param_names,
         &options.metrics,
@@ -312,11 +306,6 @@ fn save_results(
         options.stderr_only,
     );
 
-    // Pre-compute lowercase metrics to avoid repeated allocations in the loop
-    let metric_columns_lower: Vec<String> =
-        options.metrics.iter().map(|m| m.to_lowercase()).collect();
-
-    // Write CSV header
     let header_csv = headers
         .iter()
         .map(|h| escape_csv_field(h))
@@ -324,43 +313,58 @@ fn save_results(
         .join(",");
     writeln!(file, "{}", header_csv).map_err(|e| format!("Failed to write to file: {}", e))?;
 
-    // Write data rows
-    for result in results {
-        let mut values: Vec<String> = Vec::new();
+    Ok(())
+}
 
-        // Add parameter values
-        for name in param_names {
-            let val = result.params.get(name).map(|s| s.as_str()).unwrap_or("");
-            values.push(escape_csv_field(val));
-        }
+/// Append a single result to an existing CSV file (preserves existing data)
+fn append_result(
+    result: &ExperimentResult,
+    param_names: &[String],
+    filename: &str,
+    options: &Options,
+) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(filename)
+        .map_err(|e| format!("Failed to open results file for appending: {}", e))?;
 
-        // Add metric values (find matching metric for each metric name)
-        for metric_lower in &metric_columns_lower {
-            // Find the metric that matches this metric name (case-insensitive)
-            let val = result
-                .metrics
-                .iter()
-                .find(|(label, _)| label.to_lowercase().contains(metric_lower))
-                .map(|(_, v)| v.as_str())
-                .unwrap_or("");
-            values.push(escape_csv_field(val));
-        }
+    // Pre-compute lowercase metrics
+    let metric_columns_lower: Vec<String> =
+        options.metrics.iter().map(|m| m.to_lowercase()).collect();
 
-        // Add stdout/stderr only if preserve_output is enabled
-        if options.preserve_output {
-            if options.stdout_only {
-                values.push(escape_csv_field(&result.stdout));
-            } else if options.stderr_only {
-                values.push(escape_csv_field(&result.stderr));
-            } else {
-                values.push(escape_csv_field(&result.stdout));
-                values.push(escape_csv_field(&result.stderr));
-            }
-        }
+    let mut values: Vec<String> = Vec::new();
 
-        writeln!(file, "{}", values.join(","))
-            .map_err(|e| format!("Failed to write to file: {}", e))?;
+    // Add parameter values
+    for name in param_names {
+        let val = result.params.get(name).map(|s| s.as_str()).unwrap_or("");
+        values.push(escape_csv_field(val));
     }
+
+    // Add metric values (find matching metric for each metric name)
+    for metric_lower in &metric_columns_lower {
+        let val = result
+            .metrics
+            .iter()
+            .find(|(label, _)| label.to_lowercase().contains(metric_lower))
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
+        values.push(escape_csv_field(val));
+    }
+
+    // Add stdout/stderr only if preserve_output is enabled
+    if options.preserve_output {
+        if options.stdout_only {
+            values.push(escape_csv_field(&result.stdout));
+        } else if options.stderr_only {
+            values.push(escape_csv_field(&result.stderr));
+        } else {
+            values.push(escape_csv_field(&result.stdout));
+            values.push(escape_csv_field(&result.stderr));
+        }
+    }
+
+    writeln!(file, "{}", values.join(","))
+        .map_err(|e| format!("Failed to write to file: {}", e))?;
 
     Ok(())
 }
@@ -795,5 +799,85 @@ mod tests {
             results[0].metrics.get("accuracy"),
             Some(&"0.95".to_string())
         );
+    }
+
+    #[test]
+    fn test_append_result_preserves_existing_data() {
+        use std::io::Write;
+
+        // Create a temporary CSV file with initial data
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_runexp_append.csv");
+        {
+            let mut file = File::create(&temp_path).unwrap();
+            writeln!(file, "GPU,BATCHSIZE,accuracy").unwrap();
+            writeln!(file, "1,32,0.95").unwrap();
+        }
+
+        // Append a new result
+        let options = Options {
+            output_file: temp_path.to_str().unwrap().to_string(),
+            metrics: vec!["accuracy".to_string()],
+            preserve_output: false,
+            stdout_only: false,
+            stderr_only: false,
+        };
+
+        let mut params = HashMap::new();
+        params.insert("GPU".to_string(), "2".to_string());
+        params.insert("BATCHSIZE".to_string(), "64".to_string());
+
+        let mut metrics = HashMap::new();
+        metrics.insert("accuracy".to_string(), "0.98".to_string());
+
+        let result = ExperimentResult {
+            params,
+            metrics,
+            stdout: String::new(),
+            stderr: String::new(),
+        };
+
+        let param_names = vec!["GPU".to_string(), "BATCHSIZE".to_string()];
+        append_result(&result, &param_names, temp_path.to_str().unwrap(), &options).unwrap();
+
+        // Read the file and verify both rows are present
+        let contents = fs::read_to_string(&temp_path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+
+        // Clean up
+        let _ = fs::remove_file(&temp_path);
+
+        assert_eq!(lines.len(), 3); // header + 2 data rows
+        assert_eq!(lines[0], "GPU,BATCHSIZE,accuracy");
+        assert_eq!(lines[1], "1,32,0.95"); // Original data preserved
+        assert_eq!(lines[2], "2,64,0.98"); // New data appended
+    }
+
+    #[test]
+    fn test_create_csv_with_header() {
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_runexp_header.csv");
+
+        // Remove file if it exists from a previous run
+        let _ = fs::remove_file(&temp_path);
+
+        let options = Options {
+            output_file: temp_path.to_str().unwrap().to_string(),
+            metrics: vec!["accuracy".to_string(), "loss".to_string()],
+            preserve_output: true,
+            stdout_only: false,
+            stderr_only: false,
+        };
+
+        let param_names = vec!["GPU".to_string(), "BATCHSIZE".to_string()];
+        create_csv_with_header(&param_names, temp_path.to_str().unwrap(), &options).unwrap();
+
+        // Read the file and verify header
+        let contents = fs::read_to_string(&temp_path).unwrap();
+
+        // Clean up
+        let _ = fs::remove_file(&temp_path);
+
+        assert_eq!(contents.trim(), "GPU,BATCHSIZE,accuracy,loss,stdout,stderr");
     }
 }
