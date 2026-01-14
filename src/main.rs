@@ -39,7 +39,6 @@ fn main() {
     // Validate that at least one of --metrics or --preserve-output is specified
     if options.metrics.is_empty() && !options.preserve_output {
         eprintln!("Error: At least one of --metrics or --preserve-output must be specified");
-        eprintln!("       Use -m or -p for short options");
         eprintln!("       (Otherwise no meaningful output would be generated)");
         eprintln!("Use --help or -h for usage information");
         std::process::exit(1);
@@ -107,8 +106,8 @@ fn print_usage() {
     println!("  # Use expressions for dependent parameters");
     println!("  runexp --metrics accuracy --n 1,2,4 --gpu n --batchsize 32n python train.py");
     println!();
-    println!("  # Use heredoc for complex scripts");
-    println!("  runexp --preserve-output --gpu 1,2,4 --batchsize 32,64 <<EOF");
+    println!("  # Use heredoc for complex scripts (quote EOF for lazy expansion)");
+    println!("  runexp --preserve-output --gpu 1,2,4 --batchsize 32,64 <<\"EOF\"");
     println!("  python tune.py --gpu $GPU --batchsize $BATCHSIZE");
     println!("  python evaluate.py");
     println!("  EOF");
