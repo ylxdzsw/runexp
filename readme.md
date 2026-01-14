@@ -41,7 +41,9 @@ batchsize = int(os.environ["BATCHSIZE"])
 
 **Values** support:
 - **Lists**: `1,2,4` (creates combinations)
-- **Ranges**: `1:4` = `1,2,3`, `1:10:2` = `1,3,5,7,9`
+- **Ranges**: `start:end` or `start:end:step` (end is exclusive)
+  - `1:4` = `1,2,3`
+  - `1:10:2` = `1,3,5,7,9`
 - **Expressions**: Reference other parameters with `+`, `*`, `^`
   - `32n` (multiplication)
   - `n+1` (addition)
@@ -58,7 +60,7 @@ Parameters can reference each other in any order (forward/backward). Circular de
 - Metric columns (if `--metrics` specified)
 - stdout/stderr columns (if `--preserve-output` specified)
 
-**Resuming**: Failed experiments are skipped and can be resumed by re-running the same command.
+**Resuming**: Completed experiments are skipped when re-running the same command. Failed experiments are retried.
 
 ## Options
 
