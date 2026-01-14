@@ -30,7 +30,7 @@ Your script reads parameters from environment variables (converted to uppercase)
 import os
 gpu = int(os.environ["GPU"])
 batchsize = int(os.environ["BATCHSIZE"])
-# ... run experiment, print results to stdout
+print(f"accuracy: 0.9")
 ```
 
 ## Parameter Syntax
@@ -40,7 +40,7 @@ batchsize = int(os.environ["BATCHSIZE"])
 - `--gpu 1,2` or `--gpu=1,2` → `GPU`
 
 **Values** support:
-- **Lists**: `1,2,4` (creates combinations)
+- **Lists**: `clos,fullmesh` (creates combinations)
 - **Ranges**: `start:end` or `start:end:step` (end is exclusive)
   - `1:4` = `1,2,3`
   - `1:10:2` = `1,3,5,7,9`
@@ -49,11 +49,9 @@ batchsize = int(os.environ["BATCHSIZE"])
   - `n+1` (addition)
   - `n^2` (exponentiation)
 
-Parameters can reference each other in any order (forward/backward). Circular dependencies are detected.
-
 ## Output
 
-**Parsing**: `runexp` extracts numbers from stdout/stderr. Text before a number becomes its label. Use `--metrics` to filter specific metrics.
+**Parsing**: `runexp` extracts numbers from stdout/stderr. Text before a number becomes its label. Use `--metrics` to specify metrics to collect. Numbers whose label contains a metric becomes its value.
 
 **Format**: Results saved to `results.csv` (or use `--output FILE`):
 - Parameter columns (in input order)
@@ -73,10 +71,6 @@ Parameters can reference each other in any order (forward/backward). Circular de
 -h, --help            Show help
 ```
 
-**Note**: At least one of `-m`/`--metrics` or `-p`/`--preserve-output` must be specified.
-
-**Short options**: Single-letter parameters can also use short form with a single dash (e.g., `-n 1,2` instead of `--n 1,2`).
-
 ## Examples
 
 See the `examples/` directory:
@@ -84,5 +78,5 @@ See the `examples/` directory:
 - `run_tests.sh` - Comprehensive test showing all features
 
 ```bash
-./target/release/runexp --metrics accuracy,loss --gpu 1,2 --batchsize 32,64 python3 examples/test_experiment.py
+./target/release/runexp --metrics accuracy,loss --gpu 1,2 --batchsize 32,64 python examples/test_experiment.py
 ```
