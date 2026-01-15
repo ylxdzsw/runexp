@@ -58,13 +58,19 @@ pub fn parse_args(args: &[String]) -> ParseResult {
                 .map(|s| s.trim().to_string())
                 .collect();
             i += 1;
-        } else if arg == "--output" || arg.starts_with("--output=") {
+        } else if arg == "--output"
+            || arg == "-o"
+            || arg.starts_with("--output=")
+            || arg.starts_with("-o=")
+        {
             let output_value = if let Some(value) = arg.strip_prefix("--output=") {
+                value.to_string()
+            } else if let Some(value) = arg.strip_prefix("-o=") {
                 value.to_string()
             } else {
                 i += 1;
                 if i >= args.len() {
-                    return Err("--output requires an argument".to_string());
+                    return Err("--output/-o requires an argument".to_string());
                 }
                 args[i].clone()
             };

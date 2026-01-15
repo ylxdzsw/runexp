@@ -79,7 +79,7 @@ fn print_usage() {
     println!("  --stderr               Parse output only from stderr");
     println!("  -m, --metrics m1,m2    Filter results by metrics (comma-separated)");
     println!("  -p, --preserve-output  Include stdout/stderr columns in the result CSV");
-    println!("  --output FILE          Output file (default: results.csv)");
+    println!("  -o, --output FILE      Output file (default: results.csv)");
     println!("  -h, --help             Show this help message");
     println!();
     println!("Parameters:");
