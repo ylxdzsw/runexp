@@ -67,7 +67,7 @@ print(f"accuracy: 0.9")
 --stderr               Parse only stderr  
 -m, --metrics m1,m2    Filter and validate specific metrics
 -p, --preserve-output  Include stdout/stderr columns in the result CSV
---output FILE          Output file (default: results.csv)
+-o, --output FILE      Output file (default: results.csv)
 -h, --help            Show help
 ```
 
