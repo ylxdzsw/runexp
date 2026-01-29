@@ -175,9 +175,10 @@ fn evaluate_expression(
     expr: &str,
     context: &HashMap<String, String>,
 ) -> Result<Vec<String>, String> {
-    // Split by comma for multiple values
+    // Split by comma for multiple values (supports concatenated ranges like "1:4,10:20:2")
     let parts: Vec<&str> = expr.split(',').collect();
     let mut results = Vec::new();
+    let mut seen = HashSet::new();
 
     for part in parts {
         let part = part.trim();
@@ -195,7 +196,10 @@ fn evaluate_expression(
                     ));
                 }
                 for i in start..end {
-                    results.push(i.to_string());
+                    let val = i.to_string();
+                    if seen.insert(val.clone()) {
+                        results.push(val);
+                    }
                 }
                 continue;
             } else if range_parts.len() == 3 {
@@ -213,7 +217,10 @@ fn evaluate_expression(
 
                 let mut i = start;
                 while (step > 0 && i < end) || (step < 0 && i > end) {
-                    results.push(i.to_string());
+                    let val = i.to_string();
+                    if seen.insert(val.clone()) {
+                        results.push(val);
+                    }
                     i += step;
                 }
                 continue;
@@ -222,10 +229,17 @@ fn evaluate_expression(
 
         // Try to parse as expression
         match parse_expr(part, context) {
-            Ok(val) => results.push(val),
+            Ok(val) => {
+                if seen.insert(val.clone()) {
+                    results.push(val);
+                }
+            }
             Err(_) => {
                 // If parsing fails, treat as literal string
-                results.push(part.to_string());
+                let val = part.to_string();
+                if seen.insert(val.clone()) {
+                    results.push(val);
+                }
             }
         }
     }
@@ -512,5 +526,66 @@ mod tests {
 
         // Param order should be preserved
         assert_eq!(combos[0].param_order, vec!["C", "B", "A"]);
+    }
+
+    #[test]
+    fn test_concatenated_ranges() {
+        // Test concatenating multiple ranges with comma
+        // Example: 32:512:16,512:1024:32 should produce values from both ranges
+        let combos = evaluate_params(&[("DEPTH".to_string(), "1:4,10:13".to_string())]).unwrap();
+        assert_eq!(combos.len(), 6); // 1,2,3 + 10,11,12
+        assert_eq!(combos[0].params.get("DEPTH").unwrap(), "1");
+        assert_eq!(combos[1].params.get("DEPTH").unwrap(), "2");
+        assert_eq!(combos[2].params.get("DEPTH").unwrap(), "3");
+        assert_eq!(combos[3].params.get("DEPTH").unwrap(), "10");
+        assert_eq!(combos[4].params.get("DEPTH").unwrap(), "11");
+        assert_eq!(combos[5].params.get("DEPTH").unwrap(), "12");
+
+        // Test with step
+        let combos =
+            evaluate_params(&[("DEPTH".to_string(), "1:5:2,10:15:2".to_string())]).unwrap();
+        assert_eq!(combos.len(), 5); // 1,3 + 10,12,14
+        assert_eq!(combos[0].params.get("DEPTH").unwrap(), "1");
+        assert_eq!(combos[1].params.get("DEPTH").unwrap(), "3");
+        assert_eq!(combos[2].params.get("DEPTH").unwrap(), "10");
+        assert_eq!(combos[3].params.get("DEPTH").unwrap(), "12");
+        assert_eq!(combos[4].params.get("DEPTH").unwrap(), "14");
+    }
+
+    #[test]
+    fn test_duplicate_filtering() {
+        // Test that duplicates are filtered while preserving order
+        // Range 1:4 = 1,2,3 and adding 2,4 should result in 1,2,3,4 (no duplicate 2)
+        let combos = evaluate_params(&[("N".to_string(), "1:4,2,4".to_string())]).unwrap();
+        assert_eq!(combos.len(), 4); // 1,2,3,4 (2 appears only once)
+        assert_eq!(combos[0].params.get("N").unwrap(), "1");
+        assert_eq!(combos[1].params.get("N").unwrap(), "2");
+        assert_eq!(combos[2].params.get("N").unwrap(), "3");
+        assert_eq!(combos[3].params.get("N").unwrap(), "4");
+    }
+
+    #[test]
+    fn test_duplicate_filtering_with_overlapping_ranges() {
+        // Test filtering duplicates when ranges overlap
+        // 1:5 = 1,2,3,4 and 3:7 = 3,4,5,6 -> should produce 1,2,3,4,5,6
+        let combos = evaluate_params(&[("N".to_string(), "1:5,3:7".to_string())]).unwrap();
+        assert_eq!(combos.len(), 6); // 1,2,3,4,5,6
+        assert_eq!(combos[0].params.get("N").unwrap(), "1");
+        assert_eq!(combos[1].params.get("N").unwrap(), "2");
+        assert_eq!(combos[2].params.get("N").unwrap(), "3");
+        assert_eq!(combos[3].params.get("N").unwrap(), "4");
+        assert_eq!(combos[4].params.get("N").unwrap(), "5");
+        assert_eq!(combos[5].params.get("N").unwrap(), "6");
+    }
+
+    #[test]
+    fn test_duplicate_filtering_preserves_order() {
+        // Test that duplicates are filtered but first occurrence order is preserved
+        let combos = evaluate_params(&[("N".to_string(), "5,3,1,3,5,7".to_string())]).unwrap();
+        assert_eq!(combos.len(), 4); // 5,3,1,7
+        assert_eq!(combos[0].params.get("N").unwrap(), "5");
+        assert_eq!(combos[1].params.get("N").unwrap(), "3");
+        assert_eq!(combos[2].params.get("N").unwrap(), "1");
+        assert_eq!(combos[3].params.get("N").unwrap(), "7");
     }
 }
