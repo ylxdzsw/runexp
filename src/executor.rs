@@ -8,6 +8,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 #[derive(Debug, Clone)]
 struct ExperimentResult {
     params: HashMap<String, String>,
@@ -276,6 +282,27 @@ fn execute_single(
     // Capture stdout and stderr
     child.stdout(Stdio::piped());
     child.stderr(Stdio::piped());
+
+    // On Unix systems, create a new process group for the child process.
+    // This allows the child to receive signals (e.g., SIGINT from Ctrl-C)
+    // independently. Setting process_group(0) makes the child the leader
+    // of a new process group with its own PID as the group ID.
+    #[cfg(unix)]
+    {
+        child.process_group(0);
+    }
+
+    // On Windows, the default behavior allows child processes to share the
+    // parent's console and receive Ctrl-C events (CTRL_C_EVENT). We explicitly
+    // ensure this by not setting CREATE_NEW_PROCESS_GROUP flag. The default
+    // creation_flags(0) means the child inherits the parent's console and
+    // receives console control events.
+    #[cfg(windows)]
+    {
+        // Explicitly set creation_flags to 0 to ensure default console sharing behavior.
+        // This is technically redundant (as 0 is the default), but makes the intent clear.
+        child.creation_flags(0);
+    }
 
     // Execute
     let output = child
