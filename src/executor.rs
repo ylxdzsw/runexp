@@ -4,6 +4,9 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 #[derive(Debug, Clone)]
 struct ExperimentResult {
@@ -18,9 +21,6 @@ pub fn execute_experiments(
     command: &[String],
     options: &Options,
 ) -> Result<(), String> {
-    let mut new_results_count = 0;
-    let mut skipped_count = 0;
-
     // Get expected parameter names from combinations (in input order)
     let expected_params: Vec<String> = if let Some(first_combo) = combinations.first() {
         first_combo.param_order.clone()
@@ -60,8 +60,11 @@ pub fn execute_experiments(
         write_csv_header(&expected_params, &options.output_file, options)?;
     }
 
+    // Filter out combinations that already exist
+    let mut pending_combos: Vec<(usize, &Combination)> = Vec::new();
+    let mut skipped_count = 0;
+
     for (idx, combo) in combinations.iter().enumerate() {
-        // Skip if already exists in the result file
         if result_exists(&existing_results, combo) {
             println!(
                 "Skipping combination {}/{} (already exists)",
@@ -69,10 +72,57 @@ pub fn execute_experiments(
                 combinations.len()
             );
             skipped_count += 1;
-            continue;
+        } else {
+            pending_combos.push((idx, combo));
         }
+    }
 
-        println!("Running combination {}/{}", idx + 1, combinations.len());
+    // Execute experiments (sequentially or concurrently)
+    let (new_results_count, failed_count) = if options.concurrent <= 1 {
+        execute_sequential(
+            &pending_combos,
+            combinations.len(),
+            command,
+            options,
+            &expected_params,
+            &metric_columns_lower,
+        )
+    } else {
+        execute_concurrent(
+            &pending_combos,
+            combinations.len(),
+            command,
+            options,
+            &expected_params,
+            &metric_columns_lower,
+        )
+    };
+
+    println!(
+        "Completed {} out of {} combinations ({} skipped, {} new, {} failed)",
+        skipped_count + new_results_count,
+        combinations.len(),
+        skipped_count,
+        new_results_count,
+        failed_count
+    );
+
+    Ok(())
+}
+
+fn execute_sequential(
+    pending_combos: &[(usize, &Combination)],
+    total_count: usize,
+    command: &[String],
+    options: &Options,
+    expected_params: &[String],
+    metric_columns_lower: &[String],
+) -> (usize, usize) {
+    let mut new_results_count = 0;
+    let mut failed_count = 0;
+
+    for (idx, combo) in pending_combos {
+        println!("Running combination {}/{}", idx + 1, total_count);
 
         match execute_single(combo, command, options) {
             Ok((metrics, stdout, stderr)) => {
@@ -83,31 +133,123 @@ pub fn execute_experiments(
                     stderr,
                 };
                 // Append result immediately after each successful run
-                append_result(
+                if let Err(e) = append_result(
                     &result,
-                    &expected_params,
+                    expected_params,
                     &options.output_file,
                     options,
-                    &metric_columns_lower,
-                )?;
-                new_results_count += 1;
+                    metric_columns_lower,
+                ) {
+                    eprintln!("Failed to write result: {}", e);
+                    failed_count += 1;
+                } else {
+                    new_results_count += 1;
+                }
             }
             Err(e) => {
                 eprintln!("Failed to run combination: {}", e);
-                // Continue with other combinations
+                failed_count += 1;
             }
         }
     }
 
-    println!(
-        "Completed {} out of {} combinations ({} skipped, {} new)",
-        skipped_count + new_results_count,
-        combinations.len(),
-        skipped_count,
-        new_results_count
-    );
+    (new_results_count, failed_count)
+}
 
-    Ok(())
+fn execute_concurrent(
+    pending_combos: &[(usize, &Combination)],
+    total_count: usize,
+    command: &[String],
+    options: &Options,
+    expected_params: &[String],
+    metric_columns_lower: &[String],
+) -> (usize, usize) {
+    let new_results_count = Arc::new(AtomicUsize::new(0));
+    let failed_count = Arc::new(AtomicUsize::new(0));
+    let file_lock = Arc::new(Mutex::new(()));
+
+    // Use a work queue pattern: index into pending_combos
+    let next_work_idx = Arc::new(AtomicUsize::new(0));
+
+    // Spawn worker threads
+    let mut handles = Vec::with_capacity(options.concurrent);
+
+    for _ in 0..options.concurrent {
+        let next_work_idx = Arc::clone(&next_work_idx);
+        let new_results_count = Arc::clone(&new_results_count);
+        let failed_count = Arc::clone(&failed_count);
+        let file_lock = Arc::clone(&file_lock);
+
+        // Clone data needed by each thread
+        let pending_combos: Vec<(usize, Combination)> = pending_combos
+            .iter()
+            .map(|(idx, combo)| (*idx, (*combo).clone()))
+            .collect();
+        let command = command.to_vec();
+        let options = options.clone();
+        let expected_params = expected_params.to_vec();
+        let metric_columns_lower = metric_columns_lower.to_vec();
+        let total = total_count;
+
+        let handle = thread::spawn(move || {
+            loop {
+                // Atomically get the next work item
+                let work_idx = next_work_idx.fetch_add(1, Ordering::SeqCst);
+                if work_idx >= pending_combos.len() {
+                    break; // No more work
+                }
+
+                let (idx, combo) = &pending_combos[work_idx];
+                println!("Running combination {}/{}", idx + 1, total);
+
+                match execute_single(combo, &command, &options) {
+                    Ok((metrics, stdout, stderr)) => {
+                        let result = ExperimentResult {
+                            params: combo.params.clone(),
+                            metrics,
+                            stdout,
+                            stderr,
+                        };
+                        // Lock when writing to the file to prevent corruption
+                        // Use unwrap_or_else to handle poisoned mutex (from thread panics)
+                        let _guard = file_lock
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        if let Err(e) = append_result(
+                            &result,
+                            &expected_params,
+                            &options.output_file,
+                            &options,
+                            &metric_columns_lower,
+                        ) {
+                            eprintln!("Failed to write result: {}", e);
+                            failed_count.fetch_add(1, Ordering::SeqCst);
+                        } else {
+                            new_results_count.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to run combination: {}", e);
+                        failed_count.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all threads to complete, handling panics properly
+    for handle in handles {
+        if let Err(e) = handle.join() {
+            eprintln!("Worker thread panicked: {:?}", e);
+            failed_count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    (
+        new_results_count.load(Ordering::SeqCst),
+        failed_count.load(Ordering::SeqCst),
+    )
 }
 
 fn execute_single(

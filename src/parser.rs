@@ -7,6 +7,7 @@ pub struct Options {
     pub metrics: Vec<String>,
     pub output_file: String,
     pub preserve_output: bool,
+    pub concurrent: usize,
 }
 
 impl Default for Options {
@@ -17,6 +18,7 @@ impl Default for Options {
             metrics: Vec::new(),
             output_file: "results.csv".to_string(),
             preserve_output: false,
+            concurrent: 1,
         }
     }
 }
@@ -78,6 +80,29 @@ pub fn parse_args(args: &[String]) -> ParseResult {
             i += 1;
         } else if arg == "--preserve-output" || arg == "-p" {
             options.preserve_output = true;
+            i += 1;
+        } else if arg == "--concurrent"
+            || arg == "-c"
+            || arg.starts_with("--concurrent=")
+            || arg.starts_with("-c=")
+        {
+            let concurrent_value = if let Some(value) = arg.strip_prefix("--concurrent=") {
+                value.to_string()
+            } else if let Some(value) = arg.strip_prefix("-c=") {
+                value.to_string()
+            } else {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--concurrent/-c requires an argument".to_string());
+                }
+                args[i].clone()
+            };
+            options.concurrent = concurrent_value
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid concurrent value: {}", concurrent_value))?;
+            if options.concurrent == 0 {
+                return Err("--concurrent/-c must be at least 1".to_string());
+            }
             i += 1;
         } else if arg == "-h" || arg == "--help" {
             // Return a special error that indicates help was requested

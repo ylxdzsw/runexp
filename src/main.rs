@@ -80,6 +80,7 @@ fn print_usage() {
     println!("  -m, --metrics m1,m2    Filter results by metrics (comma-separated)");
     println!("  -p, --preserve-output  Include stdout/stderr columns in the result CSV");
     println!("  -o, --output FILE      Output file (default: results.csv)");
+    println!("  -c, --concurrent N     Run up to N experiments in parallel (default: 1)");
     println!("  -h, --help             Show this help message");
     println!();
     println!("Parameters:");
