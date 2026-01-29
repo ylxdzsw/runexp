@@ -44,6 +44,8 @@ print(f"accuracy: 0.9")
 - **Ranges**: `start:end` or `start:end:step` (end is exclusive)
   - `1:4` = `1,2,3`
   - `1:10:2` = `1,3,5,7,9`
+  - Multiple ranges can be concatenated: `1:4,10:13` = `1,2,3,10,11,12`
+  - Duplicates are automatically filtered: `1:5,3:7` = `1,2,3,4,5,6`
 - **Expressions**: Reference other parameters with `+`, `*`, `^`
   - `32n` (multiplication)
   - `n+1` (addition)
