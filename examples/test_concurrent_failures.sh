@@ -57,7 +57,7 @@ EOF
 
 # Run with concurrent execution (some will fail)
 set +e  # Don't exit on failure
-$RUNEXP --concurrent 3 --preserve-output --gpu 1,2,3,4 --batch 32,64 --output test_concurrent_fail.csv python3 test_concurrent_fail.py
+$RUNEXP --concurrency 3 --preserve-output --gpu 1,2,3,4 --batch 32,64 --output test_concurrent_fail.csv python3 test_concurrent_fail.py
 exit_code=$?
 set -e
 
@@ -123,7 +123,7 @@ EOF
 
 # Run with concurrent execution
 set +e
-$RUNEXP --concurrent 4 --preserve-output --gpu 1,2,3,4,5 --batch 32,64,128 --output test_concurrent_panic.csv python3 test_concurrent_panic.py
+$RUNEXP --concurrency 4 --preserve-output --gpu 1,2,3,4,5 --batch 32,64,128 --output test_concurrent_panic.csv python3 test_concurrent_panic.py
 exit_code=$?
 set -e
 
@@ -177,7 +177,7 @@ print(f"result: {result}")
 EOF
 
 # Run with high concurrency (more workers than experiments to test edge cases)
-$RUNEXP --concurrent 10 --preserve-output --n 1,2,3,4,5,6,7,8,9,10,11,12 --output test_concurrent_stress.csv python3 test_concurrent_stress.py
+$RUNEXP --concurrency 10 --preserve-output --n 1,2,3,4,5,6,7,8,9,10,11,12 --output test_concurrent_stress.csv python3 test_concurrent_stress.py
 
 # Validate CSV file integrity
 if [ ! -f test_concurrent_stress.csv ]; then
@@ -229,7 +229,7 @@ print(f"accuracy: {accuracy:.4f}")
 EOF
 
 # First run: complete some experiments
-$RUNEXP --concurrent 2 --preserve-output --gpu 1,2,3 --output test_concurrent_resume.csv python3 test_concurrent_resume.py
+$RUNEXP --concurrency 2 --preserve-output --gpu 1,2,3 --output test_concurrent_resume.csv python3 test_concurrent_resume.py
 
 # Verify first run
 first_run_rows=$(count_csv_rows test_concurrent_resume.csv)
@@ -240,7 +240,7 @@ if [ "$first_run_rows" -ne "$expected_first" ]; then
 fi
 
 # Second run: add more experiments (should append without corrupting existing data)
-$RUNEXP --concurrent 3 --preserve-output --gpu 1,2,3,4,5,6 --output test_concurrent_resume.csv python3 test_concurrent_resume.py
+$RUNEXP --concurrency 3 --preserve-output --gpu 1,2,3,4,5,6 --output test_concurrent_resume.csv python3 test_concurrent_resume.py
 
 # Verify second run
 second_run_rows=$(count_csv_rows test_concurrent_resume.csv)

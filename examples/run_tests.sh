@@ -320,7 +320,7 @@ echo
 
 echo "Test 10: Concurrent execution"
 echo "-------------------------------"
-$RUNEXP --concurrent 4 --preserve-output --gpu 1,2,4,8 --batchsize 32,64 --output test_results10.csv python3 examples/test_experiment.py
+$RUNEXP --concurrency 4 --preserve-output --gpu 1,2,4,8 --batchsize 32,64 --output test_results10.csv python3 examples/test_experiment.py
 # Validate: Should have 8 combinations (4 gpu x 2 batchsize)
 row_count=$(count_csv_rows test_results10.csv)
 if [ "$row_count" -ne 8 ]; then

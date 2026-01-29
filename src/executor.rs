@@ -78,7 +78,7 @@ pub fn execute_experiments(
     }
 
     // Execute experiments (sequentially or concurrently)
-    let (new_results_count, failed_count) = if options.concurrent <= 1 {
+    let (new_results_count, failed_count) = if options.concurrency <= 1 {
         execute_sequential(
             &pending_combos,
             combinations.len(),
@@ -172,9 +172,9 @@ fn execute_concurrent(
     let next_work_idx = Arc::new(AtomicUsize::new(0));
 
     // Spawn worker threads
-    let mut handles = Vec::with_capacity(options.concurrent);
+    let mut handles = Vec::with_capacity(options.concurrency);
 
-    for _ in 0..options.concurrent {
+    for _ in 0..options.concurrency {
         let next_work_idx = Arc::clone(&next_work_idx);
         let new_results_count = Arc::clone(&new_results_count);
         let failed_count = Arc::clone(&failed_count);
