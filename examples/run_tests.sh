@@ -318,12 +318,33 @@ fi
 echo "✓ Mixed equal sign and space syntax works correctly"
 echo
 
+echo "Test 10: Concurrent execution"
+echo "-------------------------------"
+$RUNEXP --concurrent 4 --preserve-output --gpu 1,2,4,8 --batchsize 32,64 --output test_results10.csv python3 examples/test_experiment.py
+# Validate: Should have 8 combinations (4 gpu x 2 batchsize)
+row_count=$(count_csv_rows test_results10.csv)
+if [ "$row_count" -ne 8 ]; then
+    echo "✗ Expected 8 rows, got $row_count"
+    exit 1
+fi
+# Validate: All GPU values are present
+if ! check_csv_contains test_results10.csv 1 32; then
+    echo "✗ Missing combination: GPU=1, BATCHSIZE=32"
+    exit 1
+fi
+if ! check_csv_contains test_results10.csv 8 64; then
+    echo "✗ Missing combination: GPU=8, BATCHSIZE=64"
+    exit 1
+fi
+echo "✓ Concurrent execution works correctly with 4 workers"
+echo
+
 echo "=== Showing sample output ==="
 echo "First 3 lines of test_results1.csv:"
 head -3 test_results1.csv
 echo
 echo "All CSV files created:"
-ls -lh test_results[1-9].csv 2>/dev/null || true
+ls -lh test_results[1-9].csv test_results10.csv 2>/dev/null || true
 echo
 
 echo "=== All tests passed! ==="
