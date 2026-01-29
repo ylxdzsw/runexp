@@ -66,41 +66,29 @@ pub fn execute_experiments(
         write_csv_header(&expected_params, &options.output_file, options)?;
     }
 
-    // Filter out combinations that already exist
-    let mut pending_combos: Vec<(usize, &Combination)> = Vec::new();
-    let mut skipped_count = 0;
+    // Convert combinations to indexed list for execution
+    let indexed_combos: Vec<(usize, &Combination)> = combinations.iter().enumerate().collect();
 
-    for (idx, combo) in combinations.iter().enumerate() {
-        if result_exists(&existing_results, combo) {
-            println!(
-                "Skipping combination {}/{} (already exists)",
-                idx + 1,
-                combinations.len()
-            );
-            skipped_count += 1;
-        } else {
-            pending_combos.push((idx, combo));
-        }
-    }
-
-    // Execute experiments (sequentially or concurrently)
-    let (new_results_count, failed_count) = if options.concurrency <= 1 {
+    // Execute experiments (sequentially or concurrently) with lazy checking
+    let (new_results_count, skipped_count, failed_count) = if options.concurrency <= 1 {
         execute_sequential(
-            &pending_combos,
+            &indexed_combos,
             combinations.len(),
             command,
             options,
             &expected_params,
             &metric_columns_lower,
+            &existing_results,
         )
     } else {
         execute_concurrent(
-            &pending_combos,
+            &indexed_combos,
             combinations.len(),
             command,
             options,
             &expected_params,
             &metric_columns_lower,
+            &existing_results,
         )
     };
 
@@ -117,17 +105,30 @@ pub fn execute_experiments(
 }
 
 fn execute_sequential(
-    pending_combos: &[(usize, &Combination)],
+    indexed_combos: &[(usize, &Combination)],
     total_count: usize,
     command: &[String],
     options: &Options,
     expected_params: &[String],
     metric_columns_lower: &[String],
-) -> (usize, usize) {
+    existing_results: &[ExperimentResult],
+) -> (usize, usize, usize) {
     let mut new_results_count = 0;
+    let mut skipped_count = 0;
     let mut failed_count = 0;
 
-    for (idx, combo) in pending_combos {
+    for (idx, combo) in indexed_combos {
+        // Check if combination already exists (lazy check)
+        if result_exists(existing_results, combo) {
+            println!(
+                "Skipping combination {}/{} (already exists)",
+                idx + 1,
+                total_count
+            );
+            skipped_count += 1;
+            continue;
+        }
+
         println!("Running combination {}/{}", idx + 1, total_count);
 
         match execute_single(combo, command, options) {
@@ -159,22 +160,24 @@ fn execute_sequential(
         }
     }
 
-    (new_results_count, failed_count)
+    (new_results_count, skipped_count, failed_count)
 }
 
 fn execute_concurrent(
-    pending_combos: &[(usize, &Combination)],
+    indexed_combos: &[(usize, &Combination)],
     total_count: usize,
     command: &[String],
     options: &Options,
     expected_params: &[String],
     metric_columns_lower: &[String],
-) -> (usize, usize) {
+    existing_results: &[ExperimentResult],
+) -> (usize, usize, usize) {
     let new_results_count = Arc::new(AtomicUsize::new(0));
+    let skipped_count = Arc::new(AtomicUsize::new(0));
     let failed_count = Arc::new(AtomicUsize::new(0));
     let file_lock = Arc::new(Mutex::new(()));
 
-    // Use a work queue pattern: index into pending_combos
+    // Use a work queue pattern: index into indexed_combos
     let next_work_idx = Arc::new(AtomicUsize::new(0));
 
     // Spawn worker threads
@@ -183,14 +186,16 @@ fn execute_concurrent(
     for _ in 0..options.concurrency {
         let next_work_idx = Arc::clone(&next_work_idx);
         let new_results_count = Arc::clone(&new_results_count);
+        let skipped_count = Arc::clone(&skipped_count);
         let failed_count = Arc::clone(&failed_count);
         let file_lock = Arc::clone(&file_lock);
 
         // Clone data needed by each thread
-        let pending_combos: Vec<(usize, Combination)> = pending_combos
+        let indexed_combos: Vec<(usize, Combination)> = indexed_combos
             .iter()
             .map(|(idx, combo)| (*idx, (*combo).clone()))
             .collect();
+        let existing_results: Vec<ExperimentResult> = existing_results.to_vec();
         let command = command.to_vec();
         let options = options.clone();
         let expected_params = expected_params.to_vec();
@@ -201,11 +206,23 @@ fn execute_concurrent(
             loop {
                 // Atomically get the next work item
                 let work_idx = next_work_idx.fetch_add(1, Ordering::SeqCst);
-                if work_idx >= pending_combos.len() {
+                if work_idx >= indexed_combos.len() {
                     break; // No more work
                 }
 
-                let (idx, combo) = &pending_combos[work_idx];
+                let (idx, combo) = &indexed_combos[work_idx];
+
+                // Check if combination already exists (lazy check)
+                if result_exists(&existing_results, combo) {
+                    println!(
+                        "Skipping combination {}/{} (already exists)",
+                        idx + 1,
+                        total
+                    );
+                    skipped_count.fetch_add(1, Ordering::SeqCst);
+                    continue;
+                }
+
                 println!("Running combination {}/{}", idx + 1, total);
 
                 match execute_single(combo, &command, &options) {
@@ -254,6 +271,7 @@ fn execute_concurrent(
 
     (
         new_results_count.load(Ordering::SeqCst),
+        skipped_count.load(Ordering::SeqCst),
         failed_count.load(Ordering::SeqCst),
     )
 }
