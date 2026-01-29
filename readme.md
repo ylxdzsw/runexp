@@ -70,7 +70,7 @@ print(f"accuracy: 0.9")
 -m, --metrics m1,m2    Filter and validate specific metrics
 -p, --preserve-output  Include stdout/stderr columns in the result CSV
 -o, --output FILE      Output file (default: results.csv)
--c, --concurrent N     Run up to N experiments in parallel (default: 1)
+-c, --concurrency N    Run up to N experiments in parallel (default: 1)
 -h, --help            Show help
 ```
 

@@ -7,7 +7,7 @@ pub struct Options {
     pub metrics: Vec<String>,
     pub output_file: String,
     pub preserve_output: bool,
-    pub concurrent: usize,
+    pub concurrency: usize,
 }
 
 impl Default for Options {
@@ -18,7 +18,7 @@ impl Default for Options {
             metrics: Vec::new(),
             output_file: "results.csv".to_string(),
             preserve_output: false,
-            concurrent: 1,
+            concurrency: 1,
         }
     }
 }
@@ -81,27 +81,27 @@ pub fn parse_args(args: &[String]) -> ParseResult {
         } else if arg == "--preserve-output" || arg == "-p" {
             options.preserve_output = true;
             i += 1;
-        } else if arg == "--concurrent"
+        } else if arg == "--concurrency"
             || arg == "-c"
-            || arg.starts_with("--concurrent=")
+            || arg.starts_with("--concurrency=")
             || arg.starts_with("-c=")
         {
-            let concurrent_value = if let Some(value) = arg.strip_prefix("--concurrent=") {
+            let concurrency_value = if let Some(value) = arg.strip_prefix("--concurrency=") {
                 value.to_string()
             } else if let Some(value) = arg.strip_prefix("-c=") {
                 value.to_string()
             } else {
                 i += 1;
                 if i >= args.len() {
-                    return Err("--concurrent/-c requires an argument".to_string());
+                    return Err("--concurrency/-c requires an argument".to_string());
                 }
                 args[i].clone()
             };
-            options.concurrent = concurrent_value
+            options.concurrency = concurrency_value
                 .parse::<usize>()
-                .map_err(|_| format!("Invalid concurrent value: {}", concurrent_value))?;
-            if options.concurrent == 0 {
-                return Err("--concurrent/-c must be at least 1".to_string());
+                .map_err(|_| format!("Invalid concurrency value: {}", concurrency_value))?;
+            if options.concurrency == 0 {
+                return Err("--concurrency/-c must be at least 1".to_string());
             }
             i += 1;
         } else if arg == "-h" || arg == "--help" {
