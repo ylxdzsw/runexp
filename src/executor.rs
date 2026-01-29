@@ -168,30 +168,41 @@ fn execute_concurrent(
     let failed_count = Arc::new(AtomicUsize::new(0));
     let file_lock = Arc::new(Mutex::new(()));
 
-    // Process combinations in batches of `concurrent` size
-    let mut handles = Vec::new();
-    let mut batch_start = 0;
+    // Use a work queue pattern: index into pending_combos
+    let next_work_idx = Arc::new(AtomicUsize::new(0));
 
-    while batch_start < pending_combos.len() {
-        let batch_end = std::cmp::min(batch_start + options.concurrent, pending_combos.len());
+    // Spawn worker threads
+    let mut handles = Vec::with_capacity(options.concurrent);
 
-        // Spawn threads for this batch
-        for (idx, combo) in pending_combos.iter().take(batch_end).skip(batch_start) {
-            let idx = *idx;
-            let combo = (*combo).clone();
-            let command = command.to_vec();
-            let options = options.clone();
-            let expected_params = expected_params.to_vec();
-            let metric_columns_lower = metric_columns_lower.to_vec();
-            let new_results_count = Arc::clone(&new_results_count);
-            let failed_count = Arc::clone(&failed_count);
-            let file_lock = Arc::clone(&file_lock);
-            let total = total_count;
+    for _ in 0..options.concurrent {
+        let next_work_idx = Arc::clone(&next_work_idx);
+        let new_results_count = Arc::clone(&new_results_count);
+        let failed_count = Arc::clone(&failed_count);
+        let file_lock = Arc::clone(&file_lock);
 
-            let handle = thread::spawn(move || {
+        // Clone data needed by each thread
+        let pending_combos: Vec<(usize, Combination)> = pending_combos
+            .iter()
+            .map(|(idx, combo)| (*idx, (*combo).clone()))
+            .collect();
+        let command = command.to_vec();
+        let options = options.clone();
+        let expected_params = expected_params.to_vec();
+        let metric_columns_lower = metric_columns_lower.to_vec();
+        let total = total_count;
+
+        let handle = thread::spawn(move || {
+            loop {
+                // Atomically get the next work item
+                let work_idx = next_work_idx.fetch_add(1, Ordering::SeqCst);
+                if work_idx >= pending_combos.len() {
+                    break; // No more work
+                }
+
+                let (idx, combo) = &pending_combos[work_idx];
                 println!("Running combination {}/{}", idx + 1, total);
 
-                match execute_single(&combo, &command, &options) {
+                match execute_single(combo, &command, &options) {
                     Ok((metrics, stdout, stderr)) => {
                         let result = ExperimentResult {
                             params: combo.params.clone(),
@@ -200,7 +211,10 @@ fn execute_concurrent(
                             stderr,
                         };
                         // Lock when writing to the file to prevent corruption
-                        let _guard = file_lock.lock().unwrap();
+                        // Use unwrap_or_else to handle poisoned mutex (from thread panics)
+                        let _guard = file_lock
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
                         if let Err(e) = append_result(
                             &result,
                             &expected_params,
@@ -219,16 +233,17 @@ fn execute_concurrent(
                         failed_count.fetch_add(1, Ordering::SeqCst);
                     }
                 }
-            });
-            handles.push(handle);
-        }
+            }
+        });
+        handles.push(handle);
+    }
 
-        // Wait for all threads in this batch to complete
-        for handle in handles.drain(..) {
-            let _ = handle.join();
+    // Wait for all threads to complete, handling panics properly
+    for handle in handles {
+        if let Err(e) = handle.join() {
+            eprintln!("Worker thread panicked: {:?}", e);
+            failed_count.fetch_add(1, Ordering::SeqCst);
         }
-
-        batch_start = batch_end;
     }
 
     (
