@@ -5,7 +5,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 #[cfg(unix)]
@@ -23,10 +23,11 @@ struct ExperimentResult {
 }
 
 // Struct to manage ordered output in concurrent execution
+// This ensures that progress messages are printed in strict sequential order
+// by combination index, even when threads complete out of order.
 struct OrderedOutput {
     next_to_print: AtomicUsize,
     pending: Mutex<BTreeMap<usize, String>>,
-    condvar: Condvar,
 }
 
 impl OrderedOutput {
@@ -34,15 +35,24 @@ impl OrderedOutput {
         OrderedOutput {
             next_to_print: AtomicUsize::new(0),
             pending: Mutex::new(BTreeMap::new()),
-            condvar: Condvar::new(),
         }
     }
 
     fn print(&self, idx: usize, message: String) {
-        let mut pending = self.pending.lock().unwrap();
+        // Use unwrap_or_else to handle poisoned mutex (from thread panics)
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         pending.insert(idx, message);
 
-        // Try to print all consecutive messages starting from next_to_print
+        // Try to print all consecutive messages starting from next_to_print.
+        // This loop will print the current message if it's next in sequence,
+        // plus any subsequent messages that are already buffered.
+        // If this message is not next (e.g., thread B inserts message 5 before
+        // thread A inserts message 4), the thread simply exits after buffering
+        // the message. Thread A will later print both message 4 and 5 when it
+        // arrives. This design prevents deadlocks while ensuring strict ordering.
         loop {
             let next = self.next_to_print.load(Ordering::SeqCst);
             if let Some(msg) = pending.remove(&next) {
@@ -50,8 +60,10 @@ impl OrderedOutput {
                 print!("{}", msg);
                 let _ = std::io::stdout().flush();
                 self.next_to_print.fetch_add(1, Ordering::SeqCst);
-                self.condvar.notify_all();
-                pending = self.pending.lock().unwrap();
+                pending = self
+                    .pending
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
             } else {
                 break;
             }
