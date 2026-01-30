@@ -1,6 +1,6 @@
 use crate::evaluator::Combination;
 use crate::parser::Options;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -20,6 +20,55 @@ struct ExperimentResult {
     metrics: HashMap<String, String>,
     stdout: String,
     stderr: String,
+}
+
+// Struct to manage ordered output in concurrent execution
+// This ensures that progress messages are printed in strict sequential order
+// by combination index, even when threads complete out of order.
+struct OrderedOutput {
+    next_to_print: AtomicUsize,
+    pending: Mutex<BTreeMap<usize, String>>,
+}
+
+impl OrderedOutput {
+    fn new() -> Self {
+        OrderedOutput {
+            next_to_print: AtomicUsize::new(0),
+            pending: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    fn print(&self, idx: usize, message: String) {
+        // Use unwrap_or_else to handle poisoned mutex (from thread panics)
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        pending.insert(idx, message);
+
+        // Try to print all consecutive messages starting from next_to_print.
+        // This loop will print the current message if it's next in sequence,
+        // plus any subsequent messages that are already buffered.
+        // If this message is not next (e.g., thread B inserts message 5 before
+        // thread A inserts message 4), the thread simply exits after buffering
+        // the message. Thread A will later print both message 4 and 5 when it
+        // arrives. This design prevents deadlocks while ensuring strict ordering.
+        loop {
+            let next = self.next_to_print.load(Ordering::SeqCst);
+            if let Some(msg) = pending.remove(&next) {
+                drop(pending); // Release lock before printing
+                print!("{}", msg);
+                let _ = std::io::stdout().flush();
+                self.next_to_print.fetch_add(1, Ordering::SeqCst);
+                pending = self
+                    .pending
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 pub fn execute_experiments(
@@ -176,6 +225,7 @@ fn execute_concurrent(
     let skipped_count = Arc::new(AtomicUsize::new(0));
     let failed_count = Arc::new(AtomicUsize::new(0));
     let file_lock = Arc::new(Mutex::new(()));
+    let output_order = Arc::new(OrderedOutput::new());
 
     // Use a work queue pattern: index into indexed_combos
     let next_work_idx = Arc::new(AtomicUsize::new(0));
@@ -189,6 +239,7 @@ fn execute_concurrent(
         let skipped_count = Arc::clone(&skipped_count);
         let failed_count = Arc::clone(&failed_count);
         let file_lock = Arc::clone(&file_lock);
+        let output_order = Arc::clone(&output_order);
 
         // Clone data needed by each thread
         let indexed_combos: Vec<(usize, Combination)> = indexed_combos
@@ -214,16 +265,22 @@ fn execute_concurrent(
 
                 // Check if combination already exists (lazy check)
                 if result_exists(&existing_results, combo) {
-                    println!(
-                        "Skipping combination {}/{} (already exists)",
-                        idx + 1,
-                        total
+                    output_order.print(
+                        work_idx,
+                        format!(
+                            "Skipping combination {}/{} (already exists)\n",
+                            idx + 1,
+                            total
+                        ),
                     );
                     skipped_count.fetch_add(1, Ordering::SeqCst);
                     continue;
                 }
 
-                println!("Running combination {}/{}", idx + 1, total);
+                output_order.print(
+                    work_idx,
+                    format!("Running combination {}/{}\n", idx + 1, total),
+                );
 
                 match execute_single(combo, &command, &options) {
                     Ok((metrics, stdout, stderr)) => {
@@ -310,16 +367,28 @@ fn execute_single(
         child.process_group(0);
     }
 
-    // On Windows, the default behavior allows child processes to share the
+    // On Windows with MSVC, the default behavior allows child processes to share the
     // parent's console and receive Ctrl-C events (CTRL_C_EVENT). We explicitly
     // ensure this by not setting CREATE_NEW_PROCESS_GROUP flag. The default
     // creation_flags(0) means the child inherits the parent's console and
     // receives console control events.
-    #[cfg(windows)]
+    //
+    // For MSYS2/MinGW (GNU toolchain), we need to use CREATE_NEW_PROCESS_GROUP
+    // to allow proper Ctrl-C handling in POSIX-like terminals.
+    #[cfg(all(windows, target_env = "msvc"))]
     {
         // Explicitly set creation_flags to 0 to ensure default console sharing behavior.
         // This is technically redundant (as 0 is the default), but makes the intent clear.
         child.creation_flags(0);
+    }
+
+    #[cfg(all(windows, target_env = "gnu"))]
+    {
+        // On MSYS2/MinGW, we need to set CREATE_NEW_PROCESS_GROUP (0x00000200)
+        // to allow proper Ctrl-C propagation in POSIX-like terminals.
+        // This creates a new console process group, which receives Ctrl-C events.
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        child.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
 
     // Execute
