@@ -24,16 +24,28 @@ This makes each child process the leader of its own process group. When Ctrl-C i
 
 ### Windows Systems
 
-On Windows, we ensure child processes share the parent's console:
+On Windows MSVC, we ensure child processes share the parent's console:
 
 ```rust
-#[cfg(windows)]
+#[cfg(all(windows, target_env = "msvc"))]
 {
     child.creation_flags(0);
 }
 ```
 
 This ensures child processes receive CTRL_C_EVENT when Ctrl-C is pressed in the console.
+
+On Windows with MSYS2/MinGW (GNU toolchain), we use a different approach:
+
+```rust
+#[cfg(all(windows, target_env = "gnu"))]
+{
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+    child.creation_flags(CREATE_NEW_PROCESS_GROUP);
+}
+```
+
+This creates a new console process group for POSIX-like terminals, which allows proper Ctrl-C propagation in MSYS2 environments.
 
 ## Testing
 
